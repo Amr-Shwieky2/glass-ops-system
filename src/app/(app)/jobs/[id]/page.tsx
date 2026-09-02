@@ -16,6 +16,14 @@ import { defaultQuoteValidUntil } from "@/server/quotes/versions";
 import { getProductionRequestForJob } from "@/server/production/queries";
 import { getJobAppointments } from "@/server/appointments/queries";
 import { getJobPayments } from "@/server/payments/queries";
+import { getJobCostsForJob, getJobProfitability } from "@/server/costs/queries";
+import {
+  getJobCompensationEntries,
+  getCompensationRules,
+  getBonusRules,
+  getPenaltyRules,
+} from "@/server/compensation/queries";
+import { getCommissionForJob } from "@/server/compensation/commission";
 import { getSetting } from "@/server/settings";
 import { formatILS, sumMoney } from "@/server/money";
 import { jobStatusVariant } from "@/lib/job-status-style";
@@ -30,6 +38,9 @@ import { QuoteSection } from "./quote-section";
 import { ProductionSection } from "./production-section";
 import { AppointmentsSection } from "./appointments-section";
 import { PaymentsSection } from "./payments-section";
+import { CostsSection } from "./costs-section";
+import { CompensationSection } from "./compensation-section";
+import { getCompensationEntryTechnicianNames } from "./get-compensation-entry-technicians";
 import { AssignDialog } from "./assign-dialog";
 import { CancelJobDialog } from "./cancel-job-dialog";
 import { ConfirmRemoveButton } from "./confirm-remove-button";
@@ -92,6 +103,14 @@ export default async function JobDetailPage({
     productionRequest,
     jobAppointments,
     jobPayments,
+    jobCostsResult,
+    jobProfitability,
+    compensationEntries,
+    technicianNameByEntryId,
+    commission,
+    compensationRules,
+    bonusRules,
+    penaltyRules,
   ] = await Promise.all([
     getAllWorkTypes(),
     getAssignableUsers(),
@@ -101,6 +120,14 @@ export default async function JobDetailPage({
     getProductionRequestForJob(job.id),
     getJobAppointments(job.id),
     getJobPayments(job.id),
+    getJobCostsForJob(job.id),
+    getJobProfitability(job.id),
+    getJobCompensationEntries(job.id),
+    getCompensationEntryTechnicianNames(job.id),
+    getCommissionForJob(job.id),
+    getCompensationRules(),
+    getBonusRules(),
+    getPenaltyRules(),
   ]);
 
   const canCreateMeasurement = can(user, PERMISSIONS.CREATE_MEASUREMENT);
@@ -128,6 +155,16 @@ export default async function JobDetailPage({
     PERMISSIONS.APPROVE_PAYMENT,
     PERMISSIONS.VIEW_JOB_COSTS,
   ]);
+  const canViewJobCosts = can(user, PERMISSIONS.VIEW_JOB_COSTS);
+  const canViewProfitability = can(user, PERMISSIONS.VIEW_PROFITABILITY);
+  const canManageJobCosts = can(user, PERMISSIONS.MANAGE_JOB_COSTS);
+  const canApproveRequests = can(user, PERMISSIONS.APPROVE_REQUESTS);
+  const canViewCompensation = canAny(user, [
+    PERMISSIONS.MANAGE_TECHNICIAN_PAYMENTS,
+    PERMISSIONS.VIEW_TECHNICIAN_BALANCES,
+    PERMISSIONS.VIEW_PROFITABILITY,
+  ]);
+  const canManageTechnicianPayments = can(user, PERMISSIONS.MANAGE_TECHNICIAN_PAYMENTS);
 
   const defaultValidUntil = defaultQuoteValidUntil(quoteValidityDays);
 
@@ -333,6 +370,18 @@ export default async function JobDetailPage({
         canApproveFactoryPrice={canApproveFactoryPrice}
       />
 
+      {canViewJobCosts && (
+        <CostsSection
+          jobId={job.id}
+          costsResult={jobCostsResult}
+          profitability={jobProfitability}
+          canViewProfitability={canViewProfitability}
+          canManageJobCosts={canManageJobCosts}
+          canApproveRequests={canApproveRequests}
+          externalContractors={externalContractors}
+        />
+      )}
+
       <AppointmentsSection
         jobId={job.id}
         appointments={jobAppointments}
@@ -388,6 +437,21 @@ export default async function JobDetailPage({
           paymentsResult={jobPayments}
           canCollectPayment={canCollectPayment}
           canApprovePayment={canApprovePayment}
+        />
+      )}
+
+      {canViewCompensation && (
+        <CompensationSection
+          jobId={job.id}
+          entries={compensationEntries}
+          technicianNameByEntryId={technicianNameByEntryId}
+          commission={commission}
+          assignableUsers={assignableUsers}
+          compensationRules={compensationRules}
+          bonusRules={bonusRules}
+          penaltyRules={penaltyRules}
+          jobItems={job.items}
+          canManageTechnicianPayments={canManageTechnicianPayments}
         />
       )}
     </div>
