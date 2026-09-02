@@ -269,6 +269,13 @@ export async function convertQuoteToJob(
         salePriceTotal: version?.total,
         quoteId,
         sourceQuoteVersionId: quote.signedVersionId,
+        // Commercial responsibility (section 16): the person converting a
+        // signed quote into a job is the one closing the deal — enforced by
+        // the PERMISSIONS.CLOSE_DEAL check above, matching that permission's
+        // own description ("تسجيل إغلاق الصفقة بواسطة هذا المستخدم"). This is
+        // a hard prerequisite for commission calculation (see
+        // src/server/compensation/commission.ts's computeCommission).
+        dealClosedByUserId: user!.id,
         updatedAt: new Date(),
       })
       .where(eq(jobs.id, jobId));

@@ -21,21 +21,14 @@ import {
  * of the same numeric example). This is a genuine behavioral test of the
  * system, not a re-read of already-seeded rows.
  *
- * One deliberate, documented workaround: converting a signed quote into a
- * job (src/server/quotes/actions.ts convertQuoteToJob) never sets
- * jobs.dealClosedByUserId on any live code path — only scripts/db/seed.ts
- * sets it directly. Without it, src/server/compensation/commission.ts's
- * computeCommission() always returns "لا يمكن احتساب العمولة — لم يتم
- * تحديد من أغلق الصفقة لهذه المهمة." (confirmed by reading that file, not
- * assumed), which would make the commission step of this scenario
- * unreachable through the UI alone on any job this suite creates itself.
- * That's a real product gap, flagged separately for the parallel
- * bug-fixing work rather than routed around silently; here it's patched
- * with one direct SQL UPDATE, at the exact point a correct
- * convertQuoteToJob() should set it (deal-closer = the CLOSE_DEAL holder
- * who converted the quote), so the rest of the scenario — the part
- * actually under test — still exercises the REAL commission formula
- * against REAL job_costs rows.
+ * Converting a signed quote into a job (src/server/quotes/actions.ts
+ * convertQuoteToJob) sets jobs.dealClosedByUserId to the CLOSE_DEAL holder
+ * who performed the conversion — a hard prerequisite for
+ * src/server/compensation/commission.ts's computeCommission(), which
+ * otherwise returns "لا يمكن احتساب العمولة — لم يتم تحديد من أغلق
+ * الصفقة لهذه المهمة." This scenario exercises that live code path
+ * directly (no manual DB patch), so the commission step below runs the
+ * REAL commission formula against REAL job_costs rows end to end.
  *
  * Everything else — measurement -> pricing handoff, quote sign, deposit,
  * factory approval, installation completion, cash handover, compensation,
@@ -190,11 +183,11 @@ test.describe("Ahmad end-to-end scenario (spec section 72)", () => {
     expect(text).toContain("بانتظار الإنتاج"); // waiting_for_production
     expect(moneyPattern("12000.00").test(text)).toBe(true);
 
-    // Documented workaround — see file header comment.
-    await db.query(`update jobs set deal_closed_by_user_id = $1 where id = $2`, [
-      mohammadId,
-      job.jobId,
-    ]);
+    const { rows: afterConvert } = await db.query(
+      `select deal_closed_by_user_id from jobs where id = $1`,
+      [job.jobId],
+    );
+    expect(afterConvert[0].deal_closed_by_user_id).toBe(mohammadId);
 
     // -----------------------------------------------------------------
     // 4. Mohammad records a 3,000 cash deposit — he holds APPROVE_PAYMENT
