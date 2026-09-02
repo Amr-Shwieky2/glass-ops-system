@@ -844,7 +844,7 @@ async function main() {
   }).returning();
   await db.insert(schema.approvalRequests).values({
     entityType: "customer_payment", entityId: pendingReport.id, requestedByUserId: issam.id,
-    summary: "Issam reported a customer payment received: 1,000 ₪ (Nabil Odeh)",
+    summary: "دفعة نقدية بمبلغ 1,000.00 ₪ من العميل",
     relatedJobId: nabilJob.id,
   });
 

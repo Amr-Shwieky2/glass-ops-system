@@ -573,6 +573,7 @@ export async function reportTechnicianPayment(
     await notifyUsers(approverIds, {
       type: "technician_payment_pending_approval",
       title: "دفعة فني بانتظار الاعتماد",
+      body: `أبلغ ${user.name} عن استلام دفعة نقدية بمبلغ ${formatILS(amount)} من الشركة.`,
       relatedEntityType: "technician_ledger_entry",
       relatedEntityId: ledgerEntryId,
     });

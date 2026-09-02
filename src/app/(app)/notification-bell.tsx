@@ -37,9 +37,11 @@ function relativeTime(date: Date): string {
  * recent list from GET /api/notifications (mirrors the calendar's fetch
  * of /api/appointments — the established route-handler precedent for a
  * client component pulling fresh server data). Clicking a notification
- * marks it read and, when it points at a job, navigates there. This is
- * purely an inbox — no approve/reject controls here, those already live
- * on each entity's own page.
+ * marks it read and, when the server resolved an `href` for it (see
+ * getNotificationsForUser in src/server/notifications.ts — covers every
+ * relatedEntityType notifications are ever created with, not just "job"),
+ * navigates there. This is purely an inbox — no approve/reject controls
+ * here, those already live on each entity's own page.
  */
 export function NotificationBell({ initialUnreadCount }: { initialUnreadCount: number }) {
   const router = useRouter();
@@ -77,9 +79,9 @@ export function NotificationBell({ initialUnreadCount }: { initialUnreadCount: n
         void markNotificationReadAction(n.id, {}, new FormData());
       });
     }
-    if (n.relatedEntityType === "job" && n.relatedEntityId) {
+    if (n.href) {
       setOpen(false);
-      router.push(`/jobs/${n.relatedEntityId}`);
+      router.push(n.href);
     }
   }
 

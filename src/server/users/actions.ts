@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { users, userPermissions, sessions } from "@/server/db/schema";
 import { getCurrentUser } from "@/server/auth/session";
@@ -480,17 +480,23 @@ export async function grantPermissionAction(
  * MANAGE_PERMISSIONS. Guards a single specific catastrophe: revoking the
  * LAST remaining grant of MANAGE_PERMISSIONS itself, system-wide, would
  * permanently lock every admin out of ever granting/revoking permissions
- * again (no one left who could grant it back). The count check runs inside
- * the same transaction as the delete, immediately before it, to keep the
- * check-then-act window as tight as this "bounded, cheap safety check" (not
- * a full serializable guard — an admin lockout is not a customer-facing
- * pending-state race like decide.ts's approve/reject flows, it is a rare
- * deliberate action, so this matches the effort the risk warrants). The
- * guard is intentionally NOT narrowed to "only when revoking your own
- * grant" — the invariant that must hold ("someone can always manage
- * permissions") is system-wide and must hold no matter who performs the
- * revoke, and it naturally covers the self-revoke case since the acting
- * user counts as one of the current holders.
+ * again (no one left who could grant it back).
+ *
+ * This is race-safe under concurrent revokes targeting *different* holders:
+ * the count is taken via `SELECT ... FOR UPDATE` on every row currently
+ * granting MANAGE_PERMISSIONS, which row-locks the whole matching set before
+ * counting. A second, concurrent revoke of a different holder's grant then
+ * blocks on that same SELECT ... FOR UPDATE until the first transaction
+ * commits (or rolls back) — at which point it re-reads the post-commit set
+ * and sees the correct, now-smaller count, instead of both transactions
+ * computing "2 holders, safe to delete mine" from stale snapshots and
+ * jointly zeroing the table (plain READ COMMITTED count-then-delete, with no
+ * lock, does not prevent this — see the file history for the concrete
+ * interleaving). The guard is intentionally NOT narrowed to "only when
+ * revoking your own grant" — the invariant that must hold ("someone can
+ * always manage permissions") is system-wide and must hold no matter who
+ * performs the revoke, and it naturally covers the self-revoke case since
+ * the acting user counts as one of the current holders.
  */
 export async function revokePermissionAction(
   userId: string,
@@ -512,11 +518,16 @@ export async function revokePermissionAction(
 
   await db.transaction(async (tx) => {
     if (permissionKey === PERMISSIONS.MANAGE_PERMISSIONS) {
-      const [row] = await tx
-        .select({ value: count() })
+      // Row-lock every current MANAGE_PERMISSIONS holder before counting, so
+      // a concurrent revoke of a *different* holder's grant blocks here
+      // until this transaction commits, instead of both racing off stale
+      // snapshots (see the function doc comment).
+      const holders = await tx
+        .select({ userId: userPermissions.userId })
         .from(userPermissions)
-        .where(eq(userPermissions.permissionKey, PERMISSIONS.MANAGE_PERMISSIONS));
-      if ((row?.value ?? 0) <= 1) {
+        .where(eq(userPermissions.permissionKey, PERMISSIONS.MANAGE_PERMISSIONS))
+        .for("update");
+      if (holders.length <= 1) {
         blocked = true;
         return;
       }

@@ -1,7 +1,7 @@
 import "server-only";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/server/db/client";
-import { notifications } from "@/server/db/schema";
+import { notifications, technicianLedgerEntries } from "@/server/db/schema";
 import type { Database } from "@/server/db/client";
 
 export interface ActionState {
@@ -20,6 +20,20 @@ export interface Notification {
   isRead: boolean;
   readAt: Date | null;
   createdAt: Date;
+  /**
+   * Where clicking this notification should navigate, resolved server-side
+   * per relatedEntityType — the bell (a Client Component) has no DB access
+   * of its own to work this out. Mirrors
+   * src/server/approvals/queries.ts's buildViewHref for the same three
+   * entity types that notifyUser()/notifyUsers() are ever called with
+   * (grep relatedEntityType across src/server for the exhaustive list):
+   * "job" -> the job page; "technician_ledger_entry" -> the entry's OWNING
+   * user's ledger page (not the requester, not the current viewer — looked
+   * up the same way approvals/queries.ts does it); "cash_transfer" -> the
+   * shared cash screen (no per-transfer page exists). null when there is
+   * nowhere to navigate (or the entity type is unrecognized).
+   */
+  href: string | null;
 }
 
 /**
@@ -74,12 +88,51 @@ export async function getNotificationsForUser(
   userId: string,
   limit = 50,
 ): Promise<Notification[]> {
-  return db
+  const rows = await db
     .select()
     .from(notifications)
     .where(eq(notifications.userId, userId))
     .orderBy(desc(notifications.createdAt))
     .limit(limit);
+
+  const ledgerEntryIds = rows
+    .filter((r) => r.relatedEntityType === "technician_ledger_entry" && r.relatedEntityId)
+    .map((r) => r.relatedEntityId as string);
+
+  const ledgerOwnerByEntryId = new Map<string, string>();
+  if (ledgerEntryIds.length > 0) {
+    const entries = await db
+      .select({ id: technicianLedgerEntries.id, userId: technicianLedgerEntries.userId })
+      .from(technicianLedgerEntries)
+      .where(inArray(technicianLedgerEntries.id, ledgerEntryIds));
+    for (const entry of entries) {
+      ledgerOwnerByEntryId.set(entry.id, entry.userId);
+    }
+  }
+
+  return rows.map((row) => ({
+    ...row,
+    href: resolveNotificationHref(row, ledgerOwnerByEntryId),
+  }));
+}
+
+function resolveNotificationHref(
+  row: { relatedEntityType: string | null; relatedEntityId: string | null },
+  ledgerOwnerByEntryId: Map<string, string>,
+): string | null {
+  if (!row.relatedEntityType || !row.relatedEntityId) return null;
+  switch (row.relatedEntityType) {
+    case "job":
+      return `/jobs/${row.relatedEntityId}`;
+    case "technician_ledger_entry": {
+      const ownerId = ledgerOwnerByEntryId.get(row.relatedEntityId);
+      return ownerId ? `/finance/technicians/${ownerId}` : "/finance/technicians";
+    }
+    case "cash_transfer":
+      return "/finance/cash";
+    default:
+      return null;
+  }
 }
 
 /** Unread count for the header bell badge. */
