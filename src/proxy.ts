@@ -33,10 +33,16 @@ export function proxy(request: NextRequest) {
   );
 
   if (isPublicPath(pathname)) {
-    // Logged-in visitor hitting /login again -> send them onward instead.
-    if (pathname === "/login" && hasSessionCookie) {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
-    }
+    // A logged-in visitor hitting /login again should be sent onward
+    // instead of shown the form again — but that decision belongs to
+    // /login's own Server Component (a real getCurrentUser() DB check),
+    // NOT here. Cookie presence alone is not proof of a valid session: a
+    // suspended, expired, or revoked session still carries a cookie the
+    // browser hasn't been told to drop yet. Redirecting straight to
+    // /dashboard on cookie-presence would bounce that visitor back to
+    // /login (the (app) layout's real check fails them), which bounces
+    // them back to /dashboard here, forever — an infinite redirect loop
+    // instead of the login form. See login/page.tsx.
     return NextResponse.next();
   }
 

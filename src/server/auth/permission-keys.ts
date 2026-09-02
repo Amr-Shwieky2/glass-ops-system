@@ -81,49 +81,49 @@ interface PermissionSeed {
 }
 
 export const PERMISSION_CATALOGUE: PermissionSeed[] = [
-  { key: PERMISSIONS.VIEW_CUSTOMERS, label: "View Customers", description: "See customer profiles and their history.", category: "Customers" },
-  { key: PERMISSIONS.CREATE_CUSTOMER, label: "Create Customer", description: "Add new customer profiles.", category: "Customers" },
-  { key: PERMISSIONS.EDIT_CUSTOMER, label: "Edit Customer", description: "Edit existing customer profiles.", category: "Customers" },
+  { key: PERMISSIONS.VIEW_CUSTOMERS, label: "عرض العملاء", description: "الاطلاع على ملفات العملاء وسجلّهم.", category: "العملاء" },
+  { key: PERMISSIONS.CREATE_CUSTOMER, label: "إضافة عميل", description: "إضافة ملفات عملاء جديدة.", category: "العملاء" },
+  { key: PERMISSIONS.EDIT_CUSTOMER, label: "تعديل عميل", description: "تعديل ملفات عملاء موجودة.", category: "العملاء" },
 
-  { key: PERMISSIONS.VIEW_ASSIGNED_JOBS, label: "View Assigned Jobs", description: "See jobs the user is personally assigned to.", category: "Jobs" },
-  { key: PERMISSIONS.VIEW_ALL_JOBS, label: "View All Jobs", description: "See every job in the system, not just assigned ones.", category: "Jobs" },
+  { key: PERMISSIONS.VIEW_ASSIGNED_JOBS, label: "عرض المهام المُسندة", description: "الاطلاع على المهام المُسندة للمستخدم شخصياً.", category: "المهام" },
+  { key: PERMISSIONS.VIEW_ALL_JOBS, label: "عرض جميع المهام", description: "الاطلاع على كل مهام النظام، وليس المُسندة فقط.", category: "المهام" },
 
-  { key: PERMISSIONS.CREATE_MEASUREMENT, label: "Create Measurement", description: "Record a measurement visit.", category: "Measurement & Pricing" },
-  { key: PERMISSIONS.EDIT_MEASUREMENT, label: "Edit Measurement", description: "Edit a previously recorded measurement.", category: "Measurement & Pricing" },
-  { key: PERMISSIONS.CREATE_PRICE, label: "Create Price", description: "Set prices on job items.", category: "Measurement & Pricing" },
-  { key: PERMISSIONS.EDIT_PRICE, label: "Edit Price", description: "Change previously set prices.", category: "Measurement & Pricing" },
+  { key: PERMISSIONS.CREATE_MEASUREMENT, label: "إضافة قياس", description: "تسجيل زيارة قياس.", category: "القياس والتسعير" },
+  { key: PERMISSIONS.EDIT_MEASUREMENT, label: "تعديل قياس", description: "تعديل قياس مُسجَّل سابقاً.", category: "القياس والتسعير" },
+  { key: PERMISSIONS.CREATE_PRICE, label: "تحديد سعر", description: "تحديد أسعار بنود المهمة.", category: "القياس والتسعير" },
+  { key: PERMISSIONS.EDIT_PRICE, label: "تعديل سعر", description: "تغيير أسعار محدَّدة سابقاً.", category: "القياس والتسعير" },
 
-  { key: PERMISSIONS.CREATE_QUOTE, label: "Create Quote", description: "Build a quote for a job.", category: "Quotes" },
-  { key: PERMISSIONS.SEND_QUOTE, label: "Send Quote", description: "Generate the customer's secure signing link.", category: "Quotes" },
-  { key: PERMISSIONS.CLOSE_DEAL, label: "Close Deal", description: "Mark the deal as closed by this user (drives commission).", category: "Quotes" },
+  { key: PERMISSIONS.CREATE_QUOTE, label: "إنشاء عرض سعر", description: "إعداد عرض سعر لمهمة.", category: "عروض الأسعار" },
+  { key: PERMISSIONS.SEND_QUOTE, label: "إرسال عرض سعر", description: "إنشاء رابط التوقيع الآمن للعميل.", category: "عروض الأسعار" },
+  { key: PERMISSIONS.CLOSE_DEAL, label: "إغلاق الصفقة", description: "تسجيل إغلاق الصفقة بواسطة هذا المستخدم (يؤثر على احتساب العمولة).", category: "عروض الأسعار" },
 
-  { key: PERMISSIONS.COLLECT_PAYMENT, label: "Collect Payment", description: "Record a customer payment received.", category: "Payments" },
-  { key: PERMISSIONS.APPROVE_PAYMENT, label: "Approve Payment", description: "Approve a recorded customer payment.", category: "Payments" },
+  { key: PERMISSIONS.COLLECT_PAYMENT, label: "تحصيل دفعة", description: "تسجيل دفعة مستلمة من العميل.", category: "المدفوعات" },
+  { key: PERMISSIONS.APPROVE_PAYMENT, label: "اعتماد دفعة", description: "اعتماد دفعة عميل مسجَّلة.", category: "المدفوعات" },
 
-  { key: PERMISSIONS.CREATE_PRODUCTION_ORDER, label: "Create Production Order", description: "Send a job to the factory.", category: "Production" },
-  { key: PERMISSIONS.APPROVE_FACTORY_PRICE, label: "Approve Factory Price", description: "Approve or reject a factory's submitted price.", category: "Production" },
+  { key: PERMISSIONS.CREATE_PRODUCTION_ORDER, label: "إرسال أمر إنتاج", description: "إرسال المهمة إلى المصنع.", category: "الإنتاج" },
+  { key: PERMISSIONS.APPROVE_FACTORY_PRICE, label: "اعتماد سعر المصنع", description: "اعتماد أو رفض سعر مرسَل من المصنع.", category: "الإنتاج" },
 
-  { key: PERMISSIONS.ASSIGN_INSTALLER, label: "Assign Installer", description: "Assign technicians/contractors to a job or job item.", category: "Installation" },
-  { key: PERMISSIONS.COMPLETE_INSTALLATION, label: "Complete Installation", description: "Mark installation work as completed.", category: "Installation" },
+  { key: PERMISSIONS.ASSIGN_INSTALLER, label: "تعيين فني تركيب", description: "تعيين فنيين/مقاولين على مهمة أو بند منها.", category: "التركيب" },
+  { key: PERMISSIONS.COMPLETE_INSTALLATION, label: "إكمال التركيب", description: "تسجيل انتهاء أعمال التركيب.", category: "التركيب" },
 
-  { key: PERMISSIONS.CREATE_REPAIR, label: "Create Repair", description: "Open a repair/Tikun on a job.", category: "Repairs" },
+  { key: PERMISSIONS.CREATE_REPAIR, label: "فتح إصلاح", description: "فتح طلب إصلاح (تيكون) على مهمة.", category: "الإصلاحات" },
 
-  { key: PERMISSIONS.VIEW_PROFITABILITY, label: "View Profitability", description: "See revenue, cost and margin figures.", category: "Financial visibility" },
-  { key: PERMISSIONS.VIEW_JOB_COSTS, label: "View Job Costs", description: "See the cost ledger of a job.", category: "Financial visibility" },
-  { key: PERMISSIONS.MANAGE_JOB_COSTS, label: "Manage Job Costs", description: "Record hardware/contractor/other job costs.", category: "Financial visibility" },
-  { key: PERMISSIONS.VIEW_TECHNICIAN_BALANCES, label: "View Technician Balances", description: "See any technician's ledger/balance.", category: "Financial visibility" },
+  { key: PERMISSIONS.VIEW_PROFITABILITY, label: "عرض الربحية", description: "الاطلاع على أرقام الإيراد والتكلفة وهامش الربح.", category: "الرؤية المالية" },
+  { key: PERMISSIONS.VIEW_JOB_COSTS, label: "عرض تكاليف المهمة", description: "الاطلاع على سجل تكاليف المهمة.", category: "الرؤية المالية" },
+  { key: PERMISSIONS.MANAGE_JOB_COSTS, label: "إدارة تكاليف المهمة", description: "تسجيل تكاليف مواد/مقاولين/تكاليف أخرى على المهمة.", category: "الرؤية المالية" },
+  { key: PERMISSIONS.VIEW_TECHNICIAN_BALANCES, label: "عرض أرصدة الفنيين", description: "الاطلاع على سجل/رصيد أي فني.", category: "الرؤية المالية" },
 
-  { key: PERMISSIONS.MANAGE_TECHNICIAN_PAYMENTS, label: "Manage Technician Payments", description: "Approve technician payment reports and adjustments.", category: "Technician compensation" },
+  { key: PERMISSIONS.MANAGE_TECHNICIAN_PAYMENTS, label: "إدارة مستحقات الفنيين", description: "اعتماد تقارير دفعات الفنيين والتسويات.", category: "تعويض الفنيين" },
 
-  { key: PERMISSIONS.MANAGE_VEHICLES, label: "Manage Vehicles", description: "Create/edit vehicles and responsibility history.", category: "Vehicles" },
-  { key: PERMISSIONS.ADD_FUEL, label: "Add Fuel", description: "Log a fuel purchase.", category: "Vehicles" },
+  { key: PERMISSIONS.MANAGE_VEHICLES, label: "إدارة المركبات", description: "إضافة/تعديل المركبات وسجل المسؤولية عنها.", category: "المركبات" },
+  { key: PERMISSIONS.ADD_FUEL, label: "تسجيل وقود", description: "تسجيل عملية شراء وقود.", category: "المركبات" },
 
-  { key: PERMISSIONS.MANAGE_CHECKS, label: "Manage Checks", description: "Record and update incoming/outgoing checks.", category: "Checks" },
+  { key: PERMISSIONS.MANAGE_CHECKS, label: "إدارة الشيكات", description: "تسجيل وتحديث الشيكات الواردة والصادرة.", category: "الشيكات" },
 
-  { key: PERMISSIONS.APPROVE_REQUESTS, label: "Approve Requests", description: "Decide items in the general approval queue.", category: "Approvals" },
+  { key: PERMISSIONS.APPROVE_REQUESTS, label: "اعتماد الطلبات", description: "البتّ في عناصر قائمة الموافقات العامة.", category: "الموافقات" },
 
-  { key: PERMISSIONS.MANAGE_USERS, label: "Manage Users", description: "Create/edit user accounts.", category: "Administration" },
-  { key: PERMISSIONS.MANAGE_PERMISSIONS, label: "Manage Permissions", description: "Grant/revoke permissions on any account.", category: "Administration" },
-  { key: PERMISSIONS.MANAGE_SETTINGS, label: "Manage Settings", description: "Edit business rules: commission %, compensation rates, statuses, terms.", category: "Administration" },
-  { key: PERMISSIONS.VIEW_AUDIT_LOG, label: "View Audit Log", description: "See the full change history across the system.", category: "Administration" },
+  { key: PERMISSIONS.MANAGE_USERS, label: "إدارة المستخدمين", description: "إضافة/تعديل حسابات المستخدمين.", category: "الإدارة" },
+  { key: PERMISSIONS.MANAGE_PERMISSIONS, label: "إدارة الصلاحيات", description: "منح/سحب صلاحيات أي حساب.", category: "الإدارة" },
+  { key: PERMISSIONS.MANAGE_SETTINGS, label: "إدارة الإعدادات", description: "تعديل القواعد المالية: نسبة العمولة، معدلات التعويض، الحالات، الشروط.", category: "الإدارة" },
+  { key: PERMISSIONS.VIEW_AUDIT_LOG, label: "عرض سجل التدقيق", description: "الاطلاع على سجل التغييرات الكامل في النظام.", category: "الإدارة" },
 ];

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { TriangleAlert, Gift } from "lucide-react";
 import { getCurrentUser } from "@/server/auth/session";
 import { can } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
@@ -89,7 +88,7 @@ export default async function SettingsPage() {
         <TabsContent value="penalties">
           <SimpleRuleSection
             rules={penaltyRules}
-            icon={TriangleAlert}
+            icon="triangle-alert"
             title="قواعد الجزاءات"
             description="قواعد جاهزة يُختار منها عند تسجيل جزاء على فني. تعطيل قاعدة لا يغيّر أي جزاء سبق تسجيله."
             emptyTitle="لا توجد قواعد جزاءات"
@@ -104,7 +103,7 @@ export default async function SettingsPage() {
         <TabsContent value="bonuses">
           <SimpleRuleSection
             rules={bonusRules}
-            icon={Gift}
+            icon="gift"
             title="قواعد المكافآت"
             description="قواعد جاهزة يُختار منها عند تسجيل مكافأة لفني. تعطيل قاعدة لا يغيّر أي مكافأة سبق تسجيلها."
             emptyTitle="لا توجد قواعد مكافآت"

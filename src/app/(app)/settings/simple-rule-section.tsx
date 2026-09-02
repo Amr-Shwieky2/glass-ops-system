@@ -1,6 +1,6 @@
 "use client";
 
-import type { LucideIcon } from "lucide-react";
+import { TriangleAlert, Gift } from "lucide-react";
 import type { ActionState } from "@/server/lookups/actions";
 import { formatILS } from "@/server/money";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
@@ -16,6 +16,14 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ActiveToggle } from "./active-toggle";
 import { AddSimpleRuleDialog } from "./add-simple-rule-dialog";
 import { EditSimpleRuleDialog, type SimpleRuleRow } from "./edit-simple-rule-dialog";
+
+// Lucide icon components are forwardRef objects (not plain data), so a
+// Server Component can't hand one to this Client Component as a prop —
+// Next.js rejects it ("Functions cannot be passed directly to Client
+// Components"). page.tsx passes a plain string key instead; the actual
+// icon component is resolved here, inside the client boundary.
+const ICONS = { "triangle-alert": TriangleAlert, gift: Gift } as const;
+export type SimpleRuleIconName = keyof typeof ICONS;
 
 function toFormData(rule: SimpleRuleRow, isActive: boolean): FormData {
   const fd = new FormData();
@@ -47,7 +55,7 @@ export function SimpleRuleSection({
   updateAction,
 }: {
   rules: SimpleRuleRow[];
-  icon: LucideIcon;
+  icon: SimpleRuleIconName;
   title: string;
   description: string;
   emptyTitle: string;
@@ -61,7 +69,7 @@ export function SimpleRuleSection({
     formData: FormData,
   ) => Promise<ActionState>;
 }) {
-  const Icon = icon;
+  const Icon = ICONS[icon];
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-4">

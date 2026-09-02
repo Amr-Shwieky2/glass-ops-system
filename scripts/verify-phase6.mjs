@@ -33,9 +33,11 @@ async function jobHrefByNumber(page, jobNumber) {
 }
 
 async function main() {
-  const browser = await chromium.launch({
-    executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
-  });
+  // No executablePath override — that hardcoded Linux CI path doesn't
+  // exist on every machine this script runs on (e.g. macOS). Let
+  // Playwright resolve its own managed browser, same as
+  // verify-phase7/8/9/10a.mjs.
+  const browser = await chromium.launch();
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   const employeeCtx = await browser.newContext({ locale: "ar" });
   const page = await employeeCtx.newPage();

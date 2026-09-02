@@ -35,9 +35,9 @@ function SubmitButton() {
  */
 export function GeneralSettingsForm({ settings }: { settings: SettingsSchema }) {
   const [state, formAction] = useActionState(updateGeneralSettingsAction, initialState);
-  const prevState = React.useRef(state);
-  if (prevState.current !== state) {
-    prevState.current = state;
+  const [prevState, setPrevState] = React.useState(state);
+  if (state !== prevState) {
+    setPrevState(state);
     if (state.success) toast.success("تم حفظ الإعدادات العامة.");
   }
 

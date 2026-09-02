@@ -92,7 +92,12 @@ export const auditLogs = pgTable(
     }),
     action: text("action").notNull(), // e.g. 'quote.price_changed'
     entityType: text("entity_type").notNull(),
-    entityId: uuid("entity_id").notNull(),
+    // TEXT, not uuid: unlike approval_requests (which only ever points at a
+    // real row with a UUID id), the audit trail also covers entities with
+    // no UUID of their own — e.g. settings-actions.ts audits an
+    // application_settings change keyed by its text `key` column
+    // ("commission_rate_percent"), which a uuid column rejects outright.
+    entityId: text("entity_id").notNull(),
     oldValue: jsonb("old_value"),
     newValue: jsonb("new_value"),
     createdAt: timestamp("created_at", { withTimezone: true })

@@ -29,6 +29,13 @@
       "when": 1788375341937,
       "tag": "0003_add_vehicle_resp_history_one_open_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788378585485,
+      "tag": "0004_magical_weapon_omega",
+      "breakpoints": true
     }
   ]
 }

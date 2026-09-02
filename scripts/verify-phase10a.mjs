@@ -179,8 +179,8 @@ async function main() {
       await row.locator('button[role="checkbox"]').click();
       await page.waitForTimeout(500);
     }
-    await toggleCheckbox("Create Repair");
-    await toggleCheckbox("Manage Users");
+    await toggleCheckbox("فتح إصلاح");
+    await toggleCheckbox("إدارة المستخدمين");
     await page.waitForTimeout(300);
 
     const grantedKeys = await userPermissionKeys(testUserId);
