@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "vehicle_resp_history_one_open_per_vehicle_idx" ON "vehicle_responsibility_history" USING btree ("vehicle_id") WHERE "vehicle_responsibility_history"."end_date" IS NULL;

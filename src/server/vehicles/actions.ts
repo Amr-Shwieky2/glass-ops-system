@@ -236,6 +236,15 @@ const AssignResponsibilitySchema = z.object({
  * (endDate IS NULL) the day before the new row's startDate, inserts the
  * new open row, and syncs the convenience pointer — all in one
  * transaction so the two can never drift apart.
+ *
+ * Race safety: the close-out is a single conditional
+ * `UPDATE ... WHERE vehicleId = ? AND endDate IS NULL` (not a blind
+ * update-by-id off a prior SELECT), and the schema carries a partial
+ * unique index enforcing at most one open row per vehicle
+ * (vehicle_resp_history_one_open_per_vehicle_idx). So two concurrent
+ * re-assignments of the same vehicle can no longer both succeed and leave
+ * two "open" rows: whichever transaction's INSERT loses the race hits a
+ * 23505 unique violation, caught below and surfaced as a retry error.
  */
 export async function assignVehicleResponsibility(
   vehicleId: string,
@@ -266,23 +275,21 @@ export async function assignVehicleResponsibility(
         .limit(1);
       if (!vehicle) throw new NotFoundError();
 
-      const [openRow] = await tx
-        .select({ id: vehicleResponsibilityHistory.id, startDate: vehicleResponsibilityHistory.startDate })
-        .from(vehicleResponsibilityHistory)
+      // Conditional close: only closes a row that is STILL open at the
+      // moment this UPDATE runs (not the id read by some earlier SELECT).
+      // Under concurrent re-assignments, Postgres serializes two such
+      // UPDATEs on the same row; the second one re-evaluates
+      // `endDate IS NULL` against the now-committed row and correctly
+      // finds nothing left to close.
+      await tx
+        .update(vehicleResponsibilityHistory)
+        .set({ endDate: dayBefore(startDate) })
         .where(
           and(
             eq(vehicleResponsibilityHistory.vehicleId, vehicleId),
             isNull(vehicleResponsibilityHistory.endDate),
           ),
-        )
-        .limit(1);
-
-      if (openRow) {
-        await tx
-          .update(vehicleResponsibilityHistory)
-          .set({ endDate: dayBefore(startDate) })
-          .where(eq(vehicleResponsibilityHistory.id, openRow.id));
-      }
+        );
 
       await tx.insert(vehicleResponsibilityHistory).values({
         vehicleId,
@@ -309,6 +316,9 @@ export async function assignVehicleResponsibility(
     });
   } catch (err: unknown) {
     if (err instanceof NotFoundError) return { error: "المركبة غير موجودة." };
+    if (pgErrorCode(err) === "23505") {
+      return { error: "تم تعديل المسؤول عن هذه المركبة بالتزامن من مستخدم آخر، حاول مرة أخرى." };
+    }
     return { error: "تعذر تعيين المسؤول عن المركبة، حاول مرة أخرى." };
   }
 

@@ -157,7 +157,7 @@ async function main() {
 
   try {
     console.log("=== Setup: locate seeded jobs + vehicles ===");
-    await login(page, "0501111111", "password123"); // Amr (super-admin: only holder of CREATE_REPAIR/MANAGE_VEHICLES besides seed data)
+    await login(page, "0501111111", "password123"); // Amr (super-admin: only holder of MANAGE_VEHICLES besides seed data)
     monaHref = await jobHrefByNumber(page, "JOB-2026-0006");
     saraHref = await jobHrefByNumber(page, "JOB-2026-0002");
     nabilHref = await jobHrefByNumber(page, "JOB-2026-0005");
@@ -409,8 +409,12 @@ async function main() {
     );
 
     // -----------------------------------------------------------------
-    // Part I: permission denial — Basel (lacks CREATE_REPAIR entirely, has
-    // ADD_FUEL but lacks MANAGE_VEHICLES).
+    // Part I: permission-denial DOM-absence checks (Basel) — has ADD_FUEL
+    // but lacks MANAGE_VEHICLES. Basel now also holds CREATE_REPAIR (Phase
+    // 9 follow-up fix: Basel is the seeded responsibleUserId on two open
+    // repairs, and previously had no way anywhere in the app to see or
+    // update them — see the repairs section/list checks just below, which
+    // now assert presence/access instead of absence/Forbidden).
     // -----------------------------------------------------------------
     console.log("\n--- Part I: permission-denial DOM-absence checks (Basel) ---");
     await employeeCtx.clearCookies();
@@ -419,14 +423,13 @@ async function main() {
     let text = await page.innerText("body");
     check("Basel can open Ahmad's job (still involved)", text.includes("JOB-2026-0001"));
     check(
-      "the Repairs section is genuinely ABSENT for Basel (lacks CREATE_REPAIR) — no card, no trigger (DOM)",
-      (await page.locator('[data-slot="card"]', { hasText: "الإصلاحات" }).count()) === 0 &&
-        (await page.locator('button:has-text("الإبلاغ عن مشكلة")').count()) === 0,
+      "the Repairs section IS present for Basel (now holds CREATE_REPAIR) (DOM)",
+      (await page.locator('[data-slot="card"]', { hasText: "الإصلاحات" }).count()) === 1,
     );
 
     await page.goto(`${BASE_URL}/repairs`, { waitUntil: "networkidle" });
     text = await page.innerText("body");
-    check("Basel navigating directly to /repairs sees Forbidden, not the list", text.includes("لا تملك صلاحية الوصول لهذه الصفحة"));
+    check("Basel navigating directly to /repairs sees the list, not Forbidden", !text.includes("لا تملك صلاحية الوصول لهذه الصفحة"));
 
     await page.goto(`${BASE_URL}/vehicles`, { waitUntil: "networkidle" });
     text = await page.innerText("body");

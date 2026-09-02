@@ -8,8 +8,10 @@ import {
   date,
   integer,
   index,
+  uniqueIndex,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { fuelTypeEnum } from "./enums";
 import { users } from "./auth";
 
@@ -58,7 +60,20 @@ export const vehicleResponsibilityHistory = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (t) => [index("vehicle_resp_history_vehicle_idx").on(t.vehicleId)],
+  (t) => [
+    index("vehicle_resp_history_vehicle_idx").on(t.vehicleId),
+    // Enforces "at most one open (endDate IS NULL) row per vehicle" at
+    // the database level — the invariant assignVehicleResponsibility
+    // relies on. Without this, two concurrent re-assignments of the same
+    // vehicle can both read the same open row, both close it, and both
+    // insert a new open row, leaving two "current" rows. With this index,
+    // the loser's INSERT fails with a 23505 unique violation instead of
+    // silently corrupting the history (assignVehicleResponsibility
+    // catches that code and returns a retry error).
+    uniqueIndex("vehicle_resp_history_one_open_per_vehicle_idx")
+      .on(t.vehicleId)
+      .where(sql`${t.endDate} IS NULL`),
+  ],
 );
 
 /**

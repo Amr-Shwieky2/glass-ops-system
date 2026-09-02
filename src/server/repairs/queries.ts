@@ -1,7 +1,8 @@
 import "server-only";
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { repairs, jobs, customers, users } from "@/server/db/schema";
+import { involvementFilter } from "@/server/jobs/queries";
 
 /** Statuses that mean a repair is still open work — see repairs.ts's own
  * schema comment: any row in one of these statuses must stay visible on
@@ -93,21 +94,40 @@ export async function getJobRepairs(jobId: string): Promise<Repair[]> {
     .orderBy(desc(repairs.dateReported), desc(repairs.createdAt));
 }
 
-/** Count of every unresolved repair (open/scheduled/in_progress) — small
- * dashboard widget. */
-export async function getOpenRepairsCount(): Promise<number> {
+/**
+ * Count of every unresolved repair (open/scheduled/in_progress) — small
+ * dashboard widget. When `restrictToUserId` is set (viewer only has
+ * VIEW_ASSIGNED_JOBS, not VIEW_ALL_JOBS), scoped to jobs that user is
+ * involved in — same involvementFilter used by the dashboard's other
+ * per-item lists (readyWithoutInstall, todayAppointmentRows) — so this
+ * widget never discloses job/customer identity for a job the viewer is
+ * not otherwise allowed to open.
+ */
+export async function getOpenRepairsCount(restrictToUserId?: string): Promise<number> {
   const rows = await db
     .select({ id: repairs.id })
     .from(repairs)
-    .where(inArray(repairs.status, UNRESOLVED_REPAIR_STATUSES));
+    .innerJoin(jobs, eq(repairs.jobId, jobs.id))
+    .where(
+      and(
+        inArray(repairs.status, UNRESOLVED_REPAIR_STATUSES),
+        ...(restrictToUserId ? [involvementFilter(restrictToUserId)!] : []),
+      ),
+    );
   return rows.length;
 }
 
 /** Every unresolved repair (open/scheduled/in_progress), newest
- * dateReported first — small dashboard widget listing. */
-export async function getOpenRepairs(): Promise<RepairListRow[]> {
+ * dateReported first — small dashboard widget listing. Scoped the same
+ * way as getOpenRepairsCount above when `restrictToUserId` is set. */
+export async function getOpenRepairs(restrictToUserId?: string): Promise<RepairListRow[]> {
   const rows = await repairListBaseQuery()
-    .where(inArray(repairs.status, UNRESOLVED_REPAIR_STATUSES))
+    .where(
+      and(
+        inArray(repairs.status, UNRESOLVED_REPAIR_STATUSES),
+        ...(restrictToUserId ? [involvementFilter(restrictToUserId)!] : []),
+      ),
+    )
     .orderBy(desc(repairs.dateReported), desc(repairs.createdAt));
   return rows;
 }

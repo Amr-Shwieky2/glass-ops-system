@@ -133,8 +133,8 @@ async function getDashboardStats(restrictToUserId: string | undefined) {
           ),
         )
         .orderBy(asc(appointments.scheduledStart)),
-      getOpenRepairsCount(),
-      getOpenRepairs(),
+      getOpenRepairsCount(restrictToUserId),
+      getOpenRepairs(restrictToUserId),
     ]);
 
   return {

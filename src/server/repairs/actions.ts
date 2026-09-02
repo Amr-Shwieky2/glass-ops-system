@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { repairs, jobs, jobStatuses } from "@/server/db/schema";
 import { getCurrentUser } from "@/server/auth/session";
@@ -204,8 +204,27 @@ export async function updateRepairStatusAction(
         .innerJoin(jobStatuses, eq(jobs.statusId, jobStatuses.id))
         .where(eq(jobs.id, existing.jobId))
         .limit(1);
+
+      // Only reset the job's status if THIS was the last unresolved
+      // repair on the job. Otherwise a job with two open repairs (one
+      // that pushed it to repair_needed, another that's scheduled and
+      // pushed it further to repair_scheduled) gets reset to "installed"
+      // as soon as the first of the two is resolved, even though the
+      // second is still open — mislabeling the job as done.
+      const [{ value: otherOpenCount }] = await tx
+        .select({ value: count() })
+        .from(repairs)
+        .where(
+          and(
+            eq(repairs.jobId, existing.jobId),
+            ne(repairs.id, repairId),
+            inArray(repairs.status, ["open", "scheduled", "in_progress"]),
+          ),
+        );
+
       if (
         job &&
+        otherOpenCount === 0 &&
         (job.statusKey === "repair_needed" || job.statusKey === "repair_scheduled")
       ) {
         // NOT advanceJobStatus: "installed" sorts BEFORE repair_needed/
