@@ -11,11 +11,13 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { logoutAction } from "./actions";
 import { GlobalSearchBox } from "./global-search-box";
+import { NotificationBell } from "./notification-bell";
 
 interface AppShellProps {
   userName: string;
   userPhone: string;
   allowedHrefs: string[];
+  initialUnreadCount: number;
   children: React.ReactNode;
 }
 
@@ -98,6 +100,7 @@ export function AppShell({
   userName,
   userPhone,
   allowedHrefs,
+  initialUnreadCount,
   children,
 }: AppShellProps) {
   const pathname = usePathname();
@@ -176,6 +179,7 @@ export function AppShell({
           </Button>
           <GlobalSearchBox />
           <div className="flex-1" />
+          <NotificationBell initialUnreadCount={initialUnreadCount} />
         </header>
         <main className="flex-1 bg-background p-4 md:p-6">{children}</main>
       </div>
