@@ -112,20 +112,28 @@ nothing here depends on a third-party service.
 
    ```bash
    docker build --target builder -t glass-ops-seed .
+   set -a; source .env.docker; set +a
    docker run --rm --network "$(basename "$(pwd)")_default" \
      --env-file .env.docker \
-     -e DATABASE_URL="postgres://$(grep -oP '(?<=POSTGRES_USER=).*' .env.docker):$(grep -oP '(?<=POSTGRES_PASSWORD=).*' .env.docker)@postgres:5432/$(grep -oP '(?<=POSTGRES_DB=).*' .env.docker)" \
+     -e DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}" \
      glass-ops-seed npm run db:seed
    docker rmi glass-ops-seed
    ```
 
-   (The network name follows Compose's default naming — the directory name
-   the stack was brought up from, plus `_default`; confirm it with `docker
-   network ls` if the stack was started from a differently named
-   directory.) This is a deliberate, manual, one-time step. It is never
-   run automatically, because it truncates and reseeds tables — running it
-   against a database that already holds real business data would destroy
-   that data.
+   (`set -a; source .env.docker; set +a` loads the three variables from the
+   file into the shell so they can be substituted directly, instead of
+   parsing the file with `grep -P` — Perl-compatible regex support that
+   GNU grep has but the BSD grep macOS ships by default does not, so a
+   `-P` version would silently fail there with an "invalid option" error
+   and leave `DATABASE_URL` malformed. `source`/`set -a` works the same
+   way in both bash and zsh, which covers Linux and macOS. The network
+   name follows Compose's default naming — the directory name the stack
+   was brought up from, plus `_default`; confirm it with `docker network
+   ls` if the stack was started from a differently named directory.) This
+   is a deliberate, manual, one-time step. It is never run automatically,
+   because it truncates and reseeds tables — running it against a
+   database that already holds real business data would destroy that
+   data.
 
 7. **Open the application** in a browser at the host machine's address on
    the mapped port: `http://localhost:3001` if running on the same machine

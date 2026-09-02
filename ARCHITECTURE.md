@@ -21,7 +21,7 @@ versions, and current hosting free-tier terms) pushed back.
 | PDF generation | Playwright (headless Chromium) rendering an HTML template | Apache-2.0, free |
 | Money | Postgres `numeric` columns + decimal.js, never JS floats | MIT, free |
 | Testing | Vitest (unit) + Playwright Test (e2e) | MIT/Apache-2.0, free |
-| Self-hosting | Docker Compose (Postgres + app + worker) | free |
+| Self-hosting | Docker Compose (Postgres + app) | free |
 | Optional live hosting | Decided in Phase 12 once the app is complete — see note below | — |
 
 Every one of these runs completely free, self-hosted, with no API key and
@@ -180,9 +180,13 @@ The system must run without depending on any paid service (section 1).
 Concretely:
 
 - **Self-hosted (primary, always free):** `docker compose up` — Postgres +
-  the Next.js app (+ a small worker container for scheduled notification
-  sweeps) on any machine the company controls. No account, no card, no
-  usage cap, ever.
+  the Next.js app on any machine the company controls. No account, no
+  card, no usage cap, ever. A separate worker container for scheduled
+  notification sweeps was originally planned for this layer but is not
+  part of the current stack: no scheduled-sweep entrypoint exists yet in
+  the codebase, so `docker-compose.yml` deliberately does not define a
+  service that would run nothing. That remains a documented gap for a
+  future phase — see `docker-compose.yml` and `DEPLOYMENT.md` section 1.
 - **A live URL on a free cloud tier (Phase 12, decided with the user once
   the app is complete):** researched and explicitly **not** defaulting to
   Vercel's Hobby plan — its fair-use terms restrict Hobby to
