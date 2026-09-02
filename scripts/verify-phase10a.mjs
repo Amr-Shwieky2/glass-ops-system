@@ -77,9 +77,7 @@ async function main() {
   );
   const idByPhone = Object.fromEntries(usersRes.rows.map((r) => [r.phone, r.id]));
   const amrId = idByPhone["+972501111111"];
-  const mohammadId = idByPhone["+972502222222"];
   const issamId = idByPhone["+972503333333"];
-  const baselId = idByPhone["+972504444444"];
 
   // --- DB helpers -----------------------------------------------------
   async function userByPhone(phone) {

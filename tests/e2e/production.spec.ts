@@ -151,10 +151,7 @@ test.describe("factory production approval", () => {
   test("a user without APPROVE_FACTORY_PRICE cannot decide a submitted price, even though assigned to the job", async ({
     page,
     loginAs,
-    db,
   }) => {
-    const baselId = await demoUserId(db, "basel");
-
     await loginAs(page, "mohammad");
     const job = await createLeadJob(page, {
       customerName: uniqueLabel("عميل تفويض مصنع"),

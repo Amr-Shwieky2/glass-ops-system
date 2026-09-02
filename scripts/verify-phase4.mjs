@@ -110,7 +110,6 @@ async function main() {
     // check above), so the next created job is JOB-2026-0009.
     check("new job detail page shows JOB-2026-0009", text.includes("JOB-2026-0009"));
     check("shows new_lead status", text.includes("عميل محتمل جديد"));
-    const newJobUrl = page.url();
 
     console.log("7. Add a measurement, job item, and assignment to the new job...");
     await page.click('button:has-text("إضافة قياس")');

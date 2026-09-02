@@ -29,12 +29,11 @@ import {
   cashTransactions,
   cashTransfers,
   incomingChecks,
-  outgoingChecks,
 } from "./finance";
 import { technicianLedgerEntries, commissions } from "./compensation";
 import { externalContractors } from "./contractors";
 import { repairs } from "./repairs";
-import { approvalRequests, notifications, auditLogs } from "./system";
+import { approvalRequests, notifications } from "./system";
 
 export const usersRelations = relations(users, ({ many, one }) => ({
   grantedPermissions: many(userPermissions),

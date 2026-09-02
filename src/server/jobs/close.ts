@@ -52,9 +52,7 @@ export async function closeJobAction(
   // Signature matches useActionState's (prevState, formData) call shape
   // (see src/app/(app)/jobs/[id]/close-job-button.tsx) even though this
   // action takes no form fields.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _prevState: ActionState,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _formData: FormData,
 ): Promise<ActionState> {
   const user = await getCurrentUser();

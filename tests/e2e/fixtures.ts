@@ -51,6 +51,7 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
   ],
 
   loginAs: async ({}, use) => {
+    // eslint-disable-next-line react-hooks/rules-of-hooks -- Playwright fixture parameter named `use`, not React's use()
     await use(async (page: Page, user: DemoUserKey | Creds) => {
       const creds: Creds = typeof user === "string" ? DEMO_USERS[user] : user;
       // proxy.ts bounces an already-authenticated visitor away from

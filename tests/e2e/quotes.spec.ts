@@ -187,7 +187,7 @@ test.describe("public quote-signing link (no login)", () => {
     loginAs,
   }) => {
     await loginAs(page, "mohammad");
-    const job = await createLeadJob(page, {
+    await createLeadJob(page, {
       customerName: uniqueLabel("عميل رابط عام"),
       customerPhone: uniquePhone(),
       title: "اختبار الرابط العام",

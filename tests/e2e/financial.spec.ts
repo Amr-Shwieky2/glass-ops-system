@@ -77,7 +77,7 @@ test.describe("payment status + approval", () => {
     // page.tsx's isInvolved), and Issam (seeded: VIEW_ASSIGNED_JOBS only)
     // starts out uninvolved in a job Mohammad alone created and quoted.
     await page.click('button:has-text("تعيين فني")');
-    let assignDialog = page.locator('[role="dialog"]');
+    const assignDialog = page.locator('[role="dialog"]');
     await assignDialog.locator("#userId").click();
     await page.locator(`[role="option"]:has-text("${DEMO_USERS.issam.name}")`).click();
     await assignDialog.locator('button:has-text("تعيين"):not(:has-text("فني"))').click();
