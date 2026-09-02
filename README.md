@@ -90,5 +90,11 @@ All seeded users share the password `password123`:
   reseed fresh (`npm run db:seed`) before each one, since they assert against
   the known seeded state.
 
-Deployment is out of scope here — see Phase 12 / `DEPLOYMENT.md` (per
-`ARCHITECTURE.md`'s deployment posture notes) once that's decided.
+Deployment is out of scope here — see the "Deployment" section below.
+
+## Deployment
+
+For running this system outside local development — self-hosting it with
+Docker Compose (the primary, always-free path), backing up and restoring
+its database, and the separate, later question of a live URL on a free
+cloud tier — see `DEPLOYMENT.md`.
