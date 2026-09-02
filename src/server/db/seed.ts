@@ -243,7 +243,7 @@ async function main() {
   ]);
 
   console.log("Seeding cash accounts...");
-  const [companyCash, amrCash, mohammadCash, issamCash, baselCash] = await db
+  const [companyCash, , mohammadCash, issamCash, baselCash] = await db
     .insert(schema.cashAccounts)
     .values([
       { ownerType: "company" },

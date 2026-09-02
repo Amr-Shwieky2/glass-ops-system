@@ -52,7 +52,7 @@ export function ConfirmTransferButton({
             disabled={isPending}
             onClick={() => {
               startTransition(async () => {
-                const result = await confirmCashTransfer(transferId, {}, new FormData());
+                const result = await confirmCashTransfer(transferId);
                 if (result.error) toast.error(result.error);
                 else toast.success("تم تأكيد الاستلام.");
               });

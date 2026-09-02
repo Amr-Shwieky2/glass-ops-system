@@ -166,8 +166,17 @@ export function AllocateEarningDialog({
             </button>
           </div>
 
+          {/* isCustom's two branches both put an <Input> as their second
+              field, in the same tree position — one controlled (value=
+              {quantity}), the other uncontrolled (no value prop at all).
+              Without distinct keys React reconciles them as the SAME DOM
+              node across the toggle instead of unmounting/remounting it,
+              which flips that node from controlled to uncontrolled (or
+              back) and trips React's "changing a controlled input to be
+              uncontrolled" warning. The keys below force a clean
+              unmount/remount on every isCustom toggle instead. */}
           {!isCustom ? (
-            <>
+            <React.Fragment key="rule-fields">
               <div className="space-y-2">
                 <Label htmlFor="compensationRuleId">بند التسعير *</Label>
                 <Select name="compensationRuleId" value={ruleId === NONE ? "" : ruleId} onValueChange={setRuleId}>
@@ -199,9 +208,9 @@ export function AllocateEarningDialog({
               {previewAmount && (
                 <p className="text-sm text-muted-foreground">المبلغ المتوقع: {previewAmount}</p>
               )}
-            </>
+            </React.Fragment>
           ) : (
-            <>
+            <React.Fragment key="custom-fields">
               <div className="space-y-2">
                 <Label htmlFor="customDescription">وصف المستحق *</Label>
                 <Textarea id="customDescription" name="customDescription" required />
@@ -217,7 +226,7 @@ export function AllocateEarningDialog({
                   required
                 />
               </div>
-            </>
+            </React.Fragment>
           )}
 
           {state.error && (

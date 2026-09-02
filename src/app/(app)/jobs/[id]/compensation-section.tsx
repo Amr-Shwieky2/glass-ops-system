@@ -144,9 +144,10 @@ export function CompensationSection({
             {canManageTechnicianPayments && (
               <div className="flex flex-wrap items-center gap-2">
                 <EstimateCommissionButton jobId={jobId} />
-                {commission?.status !== "finalized" && (
-                  <FinalizeCommissionButton jobId={jobId} />
-                )}
+                <FinalizeCommissionButton
+                  jobId={jobId}
+                  isFinalized={commission?.status === "finalized"}
+                />
               </div>
             )}
           </div>

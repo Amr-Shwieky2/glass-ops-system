@@ -151,11 +151,7 @@ export async function createCashTransfer(
  * confirmedAt IS NULL, and its returned row count is the real guard — the
  * rest of the transaction only runs if that update actually won the race.
  */
-export async function confirmCashTransfer(
-  transferId: string,
-  _prevState: ActionState,
-  _formData: FormData,
-): Promise<ActionState> {
+export async function confirmCashTransfer(transferId: string): Promise<ActionState> {
   const user = await getCurrentUser();
   if (!can(user, PERMISSIONS.MANAGE_TECHNICIAN_PAYMENTS)) {
     return { error: "لا تملك صلاحية تأكيد تسليم النقدية." };

@@ -85,11 +85,7 @@ async function computeCommission(jobId: string): Promise<ComputeResult> {
  * row at status='estimated'. Never writes a ledger entry — an estimate is
  * not yet official money owed, only finalizeCommission books that.
  */
-export async function estimateCommission(
-  jobId: string,
-  _prevState: ActionState,
-  _formData: FormData,
-): Promise<ActionState> {
+export async function estimateCommission(jobId: string): Promise<ActionState> {
   const user = await getCurrentUser();
   if (!canAny(user, [PERMISSIONS.MANAGE_TECHNICIAN_PAYMENTS, PERMISSIONS.VIEW_PROFITABILITY])) {
     return { error: "لا تملك صلاحية عرض الربحية." };
@@ -152,11 +148,7 @@ export async function estimateCommission(
  * (entryType='commission') and stores its id back onto the commissions
  * row. Works whether or not estimateCommission was ever called first.
  */
-export async function finalizeCommission(
-  jobId: string,
-  _prevState: ActionState,
-  _formData: FormData,
-): Promise<ActionState> {
+export async function finalizeCommission(jobId: string): Promise<ActionState> {
   const user = await getCurrentUser();
   if (!can(user, PERMISSIONS.MANAGE_TECHNICIAN_PAYMENTS)) {
     return { error: "لا تملك صلاحية اعتماد العمولات." };

@@ -51,10 +51,29 @@ export function EstimateCommissionButton({ jobId }: { jobId: string }) {
   );
 }
 
-export function FinalizeCommissionButton({ jobId }: { jobId: string }) {
+/**
+ * `isFinalized` only controls what this component RENDERS, never whether
+ * it renders at all — the parent must always mount this component (never
+ * conditionally on commission.status), or the finalize success toast is
+ * lost: the server action's revalidatePath refresh and this component's
+ * own useActionState result land in the same commit, so if the parent
+ * were to unmount this component once finalized=true, its toast-firing
+ * render would never happen. Returning null here (after the hooks run
+ * unconditionally, same fiber preserved) keeps the toast reliable while
+ * still hiding the button once there's nothing left to finalize.
+ */
+export function FinalizeCommissionButton({
+  jobId,
+  isFinalized,
+}: {
+  jobId: string;
+  isFinalized: boolean;
+}) {
   const action = finalizeCommission.bind(null, jobId);
   const [state, formAction] = useActionState(action, initialState);
   useToastOnResult(state, "تم اعتماد العمولة النهائية.");
+
+  if (isFinalized) return null;
 
   return (
     <form action={formAction}>
