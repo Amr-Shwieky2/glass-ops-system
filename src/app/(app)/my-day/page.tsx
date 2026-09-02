@@ -4,10 +4,12 @@ import { getCurrentUser } from "@/server/auth/session";
 import { can } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
 import { getMyDayAppointments } from "@/server/appointments/queries";
+import { getVehiclesList } from "@/server/vehicles/queries";
 import { getTodayRangeUtc } from "@/lib/company-day";
 import { EmptyState } from "@/components/ui/empty-state";
 import { CalendarCheck } from "lucide-react";
 import { AppointmentCard } from "./appointment-card";
+import { AddFuelQuickAction } from "./add-fuel-quick-action";
 
 export const metadata: Metadata = {
   title: "يومي | نظام إدارة عمليات الزجاج",
@@ -29,8 +31,14 @@ export default async function MyDayPage() {
   if (!user) redirect("/login");
 
   const { start, end } = getTodayRangeUtc();
-  const appointments = await getMyDayAppointments(user.id, start, end);
   const canCompleteInstallation = can(user, PERMISSIONS.COMPLETE_INSTALLATION);
+  const canAddFuel = can(user, PERMISSIONS.ADD_FUEL);
+
+  const [appointments, vehicles] = await Promise.all([
+    getMyDayAppointments(user.id, start, end),
+    canAddFuel ? getVehiclesList() : Promise.resolve([]),
+  ]);
+  const activeVehicles = vehicles.filter((v) => v.isActive);
 
   return (
     <div className="space-y-6">
@@ -51,6 +59,10 @@ export default async function MyDayPage() {
             />
           ))}
         </div>
+      )}
+
+      {canAddFuel && activeVehicles.length > 0 && (
+        <AddFuelQuickAction vehicles={activeVehicles} defaultVehicleId={user.defaultVehicleId} />
       )}
     </div>
   );
