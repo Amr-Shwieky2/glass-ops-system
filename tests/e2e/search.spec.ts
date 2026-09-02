@@ -13,20 +13,17 @@ import {
  * Spec section 87: global search — finds a job by number, a customer by
  * name/phone, and is permission-scoped.
  *
- * Ground truth checked directly in src/server/search.ts before writing the
- * scoping assertions below, rather than assuming the job-list page's own
- * per-user involvement scoping also applies here: globalSearch() gates
- * jobs behind a single binary check — VIEW_ALL_JOBS OR VIEW_ASSIGNED_JOBS
- * — and, once past it, queries ALL jobs matching the term with no further
- * per-user filter. So a VIEW_ASSIGNED_JOBS-only user's search results are
- * NOT narrowed to jobs they're actually assigned to (unlike /jobs, which
- * genuinely is — see verify-phase4.mjs and permissions.spec.ts) — global
- * search's real scoping is coarser: "can you see jobs at all", not "can
- * you see THIS job". These tests assert the real, verified behavior: a
- * user holding neither VIEW_CUSTOMERS nor any job-view permission gets
- * empty results (not an error, not a leak of matching rows), and a user
- * who does hold a job-view permission finds a matching job regardless of
- * personal involvement.
+ * globalSearch() (src/server/search.ts) applies the same per-user
+ * involvement scoping as the /jobs list page: a VIEW_ASSIGNED_JOBS-only
+ * (no VIEW_ALL_JOBS) viewer's job results are narrowed via the same
+ * involvementFilter /jobs uses (measured/priced/closed the job, or
+ * assigned to it) — so search cannot surface a job number, customer
+ * name, or status for a job the viewer has no involvement in and
+ * couldn't otherwise see. These tests assert: a user holding neither
+ * VIEW_CUSTOMERS nor any job-view permission gets empty results (not an
+ * error, not a leak of matching rows), and a user who holds
+ * VIEW_ASSIGNED_JOBS but not VIEW_ALL_JOBS finds a matching job only
+ * when actually involved in it — never one they aren't.
  */
 
 test.describe("global search", () => {
@@ -101,9 +98,10 @@ test.describe("global search", () => {
     }
   });
 
-  test("a user holding VIEW_ASSIGNED_JOBS (but not VIEW_ALL_JOBS) finds a matching job by number even when not personally involved in it", async ({
+  test("a user holding VIEW_ASSIGNED_JOBS (but not VIEW_ALL_JOBS) finds a matching job by number only once actually involved in it — not before", async ({
     page,
     loginAs,
+    db,
   }) => {
     await loginAs(page, "amr");
     const job = await createLeadJob(page, {
@@ -113,13 +111,37 @@ test.describe("global search", () => {
     });
 
     // Basel (seeded: VIEW_ASSIGNED_JOBS, not VIEW_ALL_JOBS) was never
-    // assigned to this job at all.
+    // assigned to this job at all — both the list page AND global search
+    // must hide it.
     await loginAs(page, "basel");
-    await page.goto("/jobs", { waitUntil: "networkidle" }); // the LIST page correctly hides it
+    await page.goto("/jobs", { waitUntil: "networkidle" });
     await expect(page.getByText(job.jobNumber)).toHaveCount(0);
 
     await page.goto(`/search?q=${encodeURIComponent(job.jobNumber)}`, { waitUntil: "networkidle" });
-    const text = await page.innerText("body");
-    expect(text).toContain(job.jobNumber); // ...but search still surfaces it (see file header comment)
+    // The page always echoes the raw query back in its "نتائج البحث عن
+    // ..." heading, so assert on the empty-state marker (which only
+    // renders when both results arrays are empty) rather than searching
+    // the whole body for the job number.
+    let text = await page.innerText("body");
+    expect(text).toContain("لا توجد نتائج مطابقة");
+    await expect(page.getByRole("link", { name: job.jobNumber })).toHaveCount(0);
+
+    // Now genuinely involve Basel (assigned to the job) — search must
+    // start surfacing it, same as the list page would.
+    const baselId = await demoUserId(db, "basel");
+    await db.query(
+      `insert into job_assignments (job_id, user_id, role) values ($1, $2, 'installer')`,
+      [job.jobId, baselId],
+    );
+    try {
+      await page.goto(`/search?q=${encodeURIComponent(job.jobNumber)}`, { waitUntil: "networkidle" });
+      text = await page.innerText("body");
+      expect(text).toContain(job.jobNumber);
+    } finally {
+      await db.query(`delete from job_assignments where job_id = $1 and user_id = $2`, [
+        job.jobId,
+        baselId,
+      ]);
+    }
   });
 });

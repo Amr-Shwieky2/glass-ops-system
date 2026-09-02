@@ -4,16 +4,12 @@ import { defineConfig, devices } from "@playwright/test";
  * Playwright Test config for the real e2e suite (spec section 87's list +
  * the full Ahmad worked example, spec section 72).
  *
- * NO `webServer` block, deliberately: a typical fresh `npm init playwright`
- * setup has Playwright spawn (and tear down) its own dev server for the
- * run. Here the Next.js dev server (Turbopack, hot-reloading) is already
- * running at http://localhost:3000 as a long-lived process this task must
- * not touch — a second `next dev` would collide on port 3000 and fail to
- * bind, and killing/restarting the existing one would yank the ground out
- * from under the two other agents working in parallel against the same
- * server. So `baseURL` just points at it directly and every test assumes
- * it is already up (see AGENTS.md / the task brief: "do NOT start a second
- * one; check /tmp/glass-dev.log if it seems down").
+ * NO `webServer` block, deliberately: `baseURL` points at an already-
+ * running Next.js dev server (Turbopack, hot-reloading) at
+ * http://localhost:3000 instead of having Playwright spawn/tear down its
+ * own, since this app's dev server is normally left running long-lived
+ * (see README's "Running the test suite" section). Start it yourself with
+ * `npm run dev` in another terminal before running `npx playwright test`.
  *
  * Workers are pinned to 1 (fullyParallel: false) on purpose, not as a
  * safe default: this suite's permission-denial checks repeatedly grant/

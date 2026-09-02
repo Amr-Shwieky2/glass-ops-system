@@ -5,6 +5,7 @@ import { customers, jobs, jobStatuses } from "@/server/db/schema";
 import type { AuthedUser } from "@/server/auth/session";
 import { can } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
+import { involvementFilter } from "@/server/jobs/queries";
 
 export interface GlobalSearchResults {
   customers: { id: string; name: string; phone: string }[];
@@ -17,9 +18,14 @@ export interface GlobalSearchResults {
 }
 
 /** Global search (section 65-ish) — customers by name/phone, jobs by
- * number or customer name/phone. Respects the same view permissions as
- * the dedicated list pages: a viewer with neither VIEW_CUSTOMERS nor any
- * job-view permission gets empty results, not an error. */
+ * number or customer name/phone. Respects the same view permissions AND
+ * the same per-user involvement scoping as the dedicated list pages: a
+ * viewer with neither VIEW_CUSTOMERS nor any job-view permission gets
+ * empty results, not an error, and a VIEW_ASSIGNED_JOBS-only (no
+ * VIEW_ALL_JOBS) viewer's job results are narrowed to jobs they're
+ * actually involved in — same involvementFilter the /jobs list page
+ * uses — so search can never surface a job number, customer name, or
+ * status the viewer couldn't otherwise see. */
 export async function globalSearch(
   user: AuthedUser | null,
   term: string,
@@ -29,8 +35,9 @@ export async function globalSearch(
   const pattern = `%${trimmed}%`;
 
   const canSeeCustomers = can(user, PERMISSIONS.VIEW_CUSTOMERS);
-  const canSeeJobs =
-    can(user, PERMISSIONS.VIEW_ALL_JOBS) || can(user, PERMISSIONS.VIEW_ASSIGNED_JOBS);
+  const canViewAllJobs = can(user, PERMISSIONS.VIEW_ALL_JOBS);
+  const canSeeJobs = canViewAllJobs || can(user, PERMISSIONS.VIEW_ASSIGNED_JOBS);
+  const restrictToUserId = canSeeJobs && !canViewAllJobs ? user!.id : undefined;
 
   const [customerRows, jobRows] = await Promise.all([
     canSeeCustomers
@@ -64,6 +71,7 @@ export async function globalSearch(
                 ilike(customers.name, pattern),
                 ilike(customers.phone, pattern),
               ),
+              restrictToUserId ? involvementFilter(restrictToUserId) : undefined,
             ),
           )
           .limit(8)
