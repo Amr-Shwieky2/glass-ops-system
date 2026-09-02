@@ -8,6 +8,9 @@ interface LocationButtonsProps {
   latitude?: string | null;
   longitude?: string | null;
   googleMapsUrl?: string | null;
+  /** Button size — "default" (44px) for one-handed, in-the-field screens
+   * like My Day; "sm" (36px) elsewhere. Defaults to "sm". */
+  size?: "sm" | "default";
 }
 
 /**
@@ -22,6 +25,7 @@ export function LocationButtons({
   latitude,
   longitude,
   googleMapsUrl,
+  size = "sm",
 }: LocationButtonsProps) {
   const telHref = phone ? buildTelHref(phone) : null;
   const wazeUrl = buildWazeUrl({ latitude, longitude, address });
@@ -32,7 +36,7 @@ export function LocationButtons({
   return (
     <div className="flex flex-wrap items-center gap-2">
       {telHref && (
-        <Button size="sm" variant="outline" asChild>
+        <Button size={size} variant="outline" asChild>
           <a href={telHref}>
             <Phone className="size-4" />
             اتصال
@@ -40,7 +44,7 @@ export function LocationButtons({
         </Button>
       )}
       {wazeUrl && (
-        <Button size="sm" variant="outline" asChild>
+        <Button size={size} variant="outline" asChild>
           <a href={wazeUrl} target="_blank" rel="noopener noreferrer">
             <Navigation className="size-4" />
             Waze
@@ -48,7 +52,7 @@ export function LocationButtons({
         </Button>
       )}
       {mapsUrl && (
-        <Button size="sm" variant="outline" asChild>
+        <Button size={size} variant="outline" asChild>
           <a href={mapsUrl} target="_blank" rel="noopener noreferrer">
             <MapPin className="size-4" />
             خرائط جوجل

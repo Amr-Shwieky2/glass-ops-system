@@ -73,10 +73,11 @@ export function AppointmentCard({
           latitude={a.jobLatitude ?? a.customerLatitude}
           longitude={a.jobLongitude ?? a.customerLongitude}
           googleMapsUrl={a.customerGoogleMapsUrl}
+          size="default"
         />
 
         <div className="flex flex-wrap items-center gap-2 pt-1">
-          <Button size="sm" variant="outline" asChild>
+          <Button variant="outline" asChild>
             <Link href={`/jobs/${a.jobId}`}>
               فتح المهمة
               <ArrowLeft className="size-4 rotate-180" />

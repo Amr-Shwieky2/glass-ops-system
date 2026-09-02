@@ -803,7 +803,7 @@ async function main() {
     customerId: nabil.id, jobId: nabilJob.id, amount: "1000.00", paymentDate: dateOnly(daysAgo(0)),
     method: "cash", receivedByUserId: issam.id, approvalStatus: "pending",
     createdByUserId: issam.id, createdAt: daysAgo(0),
-    notes: "Reported by Issam, awaiting management approval.",
+    notes: "بلّغ عنها عصام، بانتظار اعتماد الإدارة.",
   }).returning();
   await db.insert(schema.approvalRequests).values({
     entityType: "customer_payment", entityId: pendingReport.id, requestedByUserId: issam.id,

@@ -16,7 +16,7 @@ import {
 /** Jobs a restricted (VIEW_ASSIGNED_JOBS-only) viewer is "involved in" —
  * assigned to install, or the one who measured / priced / closed it
  * (section 16's three independent commercial-responsibility fields). */
-function involvementFilter(viewerUserId: string) {
+export function involvementFilter(viewerUserId: string) {
   return or(
     eq(jobs.measuredByUserId, viewerUserId),
     eq(jobs.pricingResponsibleUserId, viewerUserId),

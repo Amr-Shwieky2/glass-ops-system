@@ -91,7 +91,7 @@ export function CompleteInstallationDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm">
+        <Button>
           <CheckCircle2 className="size-4" />
           إكمال التركيب
         </Button>

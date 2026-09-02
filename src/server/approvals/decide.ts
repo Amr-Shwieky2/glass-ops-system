@@ -104,15 +104,32 @@ export async function decideCustomerPaymentAction(
   const approved = parsed.data.decision === "approve";
   const now = new Date();
 
+  // Guards against a double-decide race (double-click, two approvers, a
+  // retry): the UPDATE only affects a row still 'pending', and its result
+  // tells us whether we actually won that race — the plain SELECT above is
+  // just a fast-fail for the common case, not the real guard.
+  let alreadyDecided = false;
+
   await db.transaction(async (tx) => {
-    await tx
+    const [updated] = await tx
       .update(customerPayments)
       .set(
         approved
           ? { approvalStatus: "approved", approvedByUserId: user!.id, approvedAt: now }
           : { approvalStatus: "rejected" },
       )
-      .where(eq(customerPayments.id, paymentId));
+      .where(
+        and(
+          eq(customerPayments.id, paymentId),
+          eq(customerPayments.approvalStatus, "pending"),
+        ),
+      )
+      .returning({ id: customerPayments.id });
+
+    if (!updated) {
+      alreadyDecided = true;
+      return;
+    }
 
     if (request) {
       await tx
@@ -147,6 +164,10 @@ export async function decideCustomerPaymentAction(
       });
     }
   });
+
+  if (alreadyDecided) {
+    return { error: "تم اتخاذ قرار بشأن هذه الدفعة بالفعل." };
+  }
 
   await notifyUser({
     userId: payment.createdByUserId ?? payment.receivedByUserId,

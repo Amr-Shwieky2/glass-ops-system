@@ -1,13 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { eq, and, isNull, count, notExists, sql, gte, lt, ne, asc } from "drizzle-orm";
+import { eq, and, isNull, count, notExists, exists, sql, gte, lt, ne, asc } from "drizzle-orm";
 import { db } from "@/server/db/client";
-import { jobs, jobStatuses, customers, appointments } from "@/server/db/schema";
+import { jobs, jobStatuses, customers, appointments, appointmentAssignees } from "@/server/db/schema";
 import { getCurrentUser } from "@/server/auth/session";
+import { can, canAny } from "@/server/auth/permissions";
+import { PERMISSIONS } from "@/server/auth/permission-keys";
+import { involvementFilter } from "@/server/jobs/queries";
 import { getTodayRangeUtc } from "@/lib/company-day";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
+import { Forbidden } from "@/components/forbidden";
 import { Users, Briefcase, Hourglass, Factory, ArrowLeft, Ruler, Wrench, CalendarClock } from "lucide-react";
 
 export const metadata: Metadata = {
@@ -28,7 +32,7 @@ const APPOINTMENT_TYPE_LABEL_AR: Record<string, string> = {
   other: "أخرى",
 };
 
-async function getDashboardStats() {
+async function getDashboardStats(restrictToUserId: string | undefined) {
   const { start: todayStart, end: todayEnd } = getTodayRangeUtc();
 
   const [
@@ -81,6 +85,7 @@ async function getDashboardStats() {
                   ),
                 ),
             ),
+            ...(restrictToUserId ? [involvementFilter(restrictToUserId)!] : []),
           ),
         ),
       db
@@ -100,6 +105,21 @@ async function getDashboardStats() {
             gte(appointments.scheduledStart, todayStart),
             lt(appointments.scheduledStart, todayEnd),
             ne(appointments.status, "cancelled"),
+            ...(restrictToUserId
+              ? [
+                  exists(
+                    db
+                      .select({ one: sql`1` })
+                      .from(appointmentAssignees)
+                      .where(
+                        and(
+                          eq(appointmentAssignees.appointmentId, appointments.id),
+                          eq(appointmentAssignees.userId, restrictToUserId),
+                        ),
+                      ),
+                  ),
+                ]
+              : []),
           ),
         )
         .orderBy(asc(appointments.scheduledStart)),
@@ -119,7 +139,11 @@ async function getDashboardStats() {
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
-  const stats = await getDashboardStats();
+  if (!canAny(user, [PERMISSIONS.VIEW_ALL_JOBS, PERMISSIONS.VIEW_ASSIGNED_JOBS])) {
+    return <Forbidden />;
+  }
+  const canViewAll = can(user, PERMISSIONS.VIEW_ALL_JOBS);
+  const stats = await getDashboardStats(canViewAll ? undefined : user!.id);
 
   return (
     <div className="space-y-6">

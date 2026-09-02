@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { appointments, jobItems, jobs } from "@/server/db/schema";
 import { getCurrentUser } from "@/server/auth/session";
@@ -67,11 +67,26 @@ export async function completeInstallationAction(params: {
   }
 
   let autoApprovedPayment = true;
+  // Guards against a double-submit race: the UPDATE only affects an
+  // appointment still 'scheduled', and its result tells us whether we
+  // actually won that race — the plain SELECT above is just a fast-fail
+  // for the common case, not the real guard. If we lost the race, skip
+  // every other write in this transaction (job items, payment, job status,
+  // audit) so nothing is double-recorded.
+  let alreadyCompleted = false;
   await db.transaction(async (tx) => {
-    await tx
+    const [updated] = await tx
       .update(appointments)
       .set({ status: "completed", updatedAt: new Date() })
-      .where(eq(appointments.id, params.appointmentId));
+      .where(
+        and(eq(appointments.id, params.appointmentId), eq(appointments.status, "scheduled")),
+      )
+      .returning({ id: appointments.id });
+
+    if (!updated) {
+      alreadyCompleted = true;
+      return;
+    }
 
     if (params.jobItemIds.length > 0) {
       await tx
@@ -113,6 +128,10 @@ export async function completeInstallationAction(params: {
       tx,
     );
   });
+
+  if (alreadyCompleted) {
+    return { error: "تم التعامل مع هذا الموعد بالفعل." };
+  }
 
   if (params.paymentCollected && !autoApprovedPayment) {
     const approverIds = await getUserIdsWithPermission(PERMISSIONS.APPROVE_PAYMENT);
