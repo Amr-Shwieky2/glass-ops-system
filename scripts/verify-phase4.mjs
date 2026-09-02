@@ -22,9 +22,11 @@ async function login(page, phone, password) {
 }
 
 async function main() {
-  const browser = await chromium.launch({
-    executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
-  });
+  // No executablePath override — that hardcoded Linux CI path doesn't
+  // exist on every machine this script runs on (e.g. macOS). Let
+  // Playwright resolve its own managed browser, same as
+  // verify-phase6/7/8/9/10a.mjs.
+  const browser = await chromium.launch();
   const context = await browser.newContext({ locale: "ar" });
   const page = await context.newPage();
   const consoleErrors = [];
@@ -71,10 +73,24 @@ async function main() {
     text = await page.innerText("body");
     check("new customer appears in list", text.includes("زبون تجريبي"));
 
-    console.log("5. Jobs list shows all 5 seeded jobs...");
+    // The seed grew from 5 to 8 demo jobs across later phases (Job 6 Mona,
+    // Job 7 Karim, Job 8 Yasmin — see src/server/db/seed.ts) after this
+    // script was first written; check against all 8 so it stays accurate
+    // as the seed evolves, same reconciliation this file's own comments
+    // elsewhere describe for other phase scripts.
+    console.log("5. Jobs list shows all 8 seeded jobs...");
     await page.goto(`${BASE_URL}/jobs`, { waitUntil: "networkidle" });
     text = await page.innerText("body");
-    for (const num of ["JOB-2026-0001", "JOB-2026-0002", "JOB-2026-0003", "JOB-2026-0004", "JOB-2026-0005"]) {
+    for (const num of [
+      "JOB-2026-0001",
+      "JOB-2026-0002",
+      "JOB-2026-0003",
+      "JOB-2026-0004",
+      "JOB-2026-0005",
+      "JOB-2026-0006",
+      "JOB-2026-0007",
+      "JOB-2026-0008",
+    ]) {
       check(`${num} listed`, text.includes(num));
     }
 
@@ -90,7 +106,9 @@ async function main() {
       page.click('button:has-text("إنشاء المهمة")'),
     ]);
     text = await page.innerText("body");
-    check("new job detail page shows JOB-2026-0006", text.includes("JOB-2026-0006"));
+    // Job numbering continues on from the 8 seeded jobs (see the "5."
+    // check above), so the next created job is JOB-2026-0009.
+    check("new job detail page shows JOB-2026-0009", text.includes("JOB-2026-0009"));
     check("shows new_lead status", text.includes("عميل محتمل جديد"));
     const newJobUrl = page.url();
 
@@ -129,7 +147,13 @@ async function main() {
     await page.waitForURL(/status=ready_from_factory/, { timeout: 5000 });
     await page.waitForLoadState("networkidle");
     text = await page.innerText("body");
-    check("filter shows only JOB-2026-0004", text.includes("JOB-2026-0004") && !text.includes("JOB-2026-0001"));
+    // JOB-2026-0004 (Reem) has since moved on to installation_scheduled
+    // (Phase 7's seeded appointments); JOB-2026-0006 (Mona) is the seeded
+    // job that now sits in ready_from_factory (see src/server/db/seed.ts).
+    check(
+      "filter shows only JOB-2026-0006",
+      text.includes("JOB-2026-0006") && !text.includes("JOB-2026-0001") && !text.includes("JOB-2026-0004"),
+    );
 
     console.log("9. Global search...");
     await page.goto(`${BASE_URL}/dashboard`, { waitUntil: "networkidle" });

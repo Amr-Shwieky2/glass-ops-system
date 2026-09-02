@@ -6,9 +6,11 @@ import { chromium } from "playwright-core";
 const BASE_URL = "http://localhost:3000";
 
 async function main() {
-  const browser = await chromium.launch({
-    executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
-  });
+  // No executablePath override — that hardcoded Linux CI path doesn't
+  // exist on every machine this script runs on (e.g. macOS). Let
+  // Playwright resolve its own managed browser, same as
+  // verify-phase6/7/8/9/10a.mjs.
+  const browser = await chromium.launch();
   const page = await browser.newPage({ locale: "ar" });
   const consoleErrors = [];
   page.on("console", (msg) => {
