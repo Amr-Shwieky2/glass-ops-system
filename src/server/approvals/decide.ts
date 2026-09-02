@@ -26,11 +26,17 @@ export interface ActionState {
 export async function createApprovalRequest(
   tx: Database,
   params: {
-    entityType: "customer_payment";
+    entityType:
+      | "customer_payment"
+      | "technician_ledger_entry"
+      | "factory_submission"
+      | "job_cost";
     entityId: string;
     requestedByUserId: string;
     summary: string;
-    relatedJobId: string;
+    // Nullable: e.g. a technician's self-reported payment (section 29) is
+    // not tied to any one job.
+    relatedJobId: string | null;
   },
 ): Promise<void> {
   await tx.insert(approvalRequests).values({
