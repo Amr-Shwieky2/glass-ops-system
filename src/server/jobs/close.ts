@@ -8,7 +8,6 @@ import { getCurrentUser } from "@/server/auth/session";
 import { can } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
-import { advanceJobStatus } from "@/server/jobs/status";
 import { getJobPayments } from "@/server/payments/queries";
 import { compareMoney } from "@/server/money";
 
@@ -36,10 +35,26 @@ export interface ActionState {
  *       via getJobPayments (src/server/payments/queries.ts, Phase 8) — a
  *       null salePriceTotal also blocks closing (a job can't be "fully
  *       paid" against an undefined price)
+ *
+ * All three checks above run as plain SELECTs before the transaction —
+ * they're just a fast-fail for the common case. The actual guard against
+ * a double-decide race (double-click, two admins, a retry) is the
+ * conditional `UPDATE ... WHERE id = ? AND status_id = ?` below, pinned
+ * to the exact status row observed above: if a concurrent close already
+ * moved the job off that status, this UPDATE affects zero rows and we
+ * report "already closed" instead of writing a second audit row (the
+ * same pattern as src/server/approvals/decide.ts and
+ * src/server/costs/actions.ts — advanceJobStatus()'s own SELECT-then-
+ * UPDATE isn't race-safe on its own, so it's not used here).
  */
 export async function closeJobAction(
   jobId: string,
+  // Signature matches useActionState's (prevState, formData) call shape
+  // (see src/app/(app)/jobs/[id]/close-job-button.tsx) even though this
+  // action takes no form fields.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _prevState: ActionState,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _formData: FormData,
 ): Promise<ActionState> {
   const user = await getCurrentUser();
@@ -50,6 +65,7 @@ export async function closeJobAction(
   const [job] = await db
     .select({
       id: jobs.id,
+      statusId: jobs.statusId,
       salePriceTotal: jobs.salePriceTotal,
       isTerminal: jobStatuses.isTerminal,
     })
@@ -85,8 +101,27 @@ export async function closeJobAction(
     return { error: "لا يمكن إغلاق المهمة قبل تحصيل كامل المبلغ المستحق." };
   }
 
+  const [completedStatus] = await db
+    .select({ id: jobStatuses.id })
+    .from(jobStatuses)
+    .where(eq(jobStatuses.key, "completed"))
+    .limit(1);
+  if (!completedStatus) return { error: "تعذر إغلاق المهمة." };
+
+  let alreadyClosed = false;
+
   await db.transaction(async (tx) => {
-    await advanceJobStatus(tx, jobId, "completed");
+    const [updated] = await tx
+      .update(jobs)
+      .set({ statusId: completedStatus.id, updatedAt: new Date() })
+      .where(and(eq(jobs.id, jobId), eq(jobs.statusId, job.statusId)))
+      .returning({ id: jobs.id });
+
+    if (!updated) {
+      alreadyClosed = true;
+      return;
+    }
+
     await recordAudit(
       {
         userId: user!.id,
@@ -98,6 +133,10 @@ export async function closeJobAction(
       tx,
     );
   });
+
+  if (alreadyClosed) {
+    return { error: "هذه المهمة مغلقة بالفعل." };
+  }
 
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath("/jobs");

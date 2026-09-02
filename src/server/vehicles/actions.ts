@@ -11,6 +11,20 @@ import { PERMISSIONS } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
 import { parseNonNegativeMoneyInput } from "@/server/money";
 
+/**
+ * Extracts a Postgres error code (e.g. "23505" for a unique-violation)
+ * from whatever drizzle-orm threw. drizzle-orm 0.45's node-postgres
+ * driver wraps the real `pg` error (which carries `.code` directly) in a
+ * `DrizzleQueryError`, with the original error attached as `.cause` —
+ * not spread onto the wrapper itself — so checking `err.code` alone
+ * (as elsewhere in this codebase) misses it here; this checks both.
+ */
+function pgErrorCode(err: unknown): string | undefined {
+  const direct = (err as { code?: string } | null)?.code;
+  if (direct) return direct;
+  return (err as { cause?: { code?: string } } | null)?.cause?.code;
+}
+
 export interface ActionState {
   error?: string;
   success?: boolean;
@@ -102,7 +116,7 @@ export async function createVehicleAction(
       return vehicle.id;
     });
   } catch (err: unknown) {
-    const code = (err as { code?: string } | null)?.code;
+    const code = pgErrorCode(err);
     if (code === "23505") {
       return { error: "رقم اللوحة مستخدم بالفعل لمركبة أخرى." };
     }
@@ -192,7 +206,7 @@ export async function updateVehicleAction(
     });
   } catch (err: unknown) {
     if (err instanceof NotFoundError) return { error: "المركبة غير موجودة." };
-    const code = (err as { code?: string } | null)?.code;
+    const code = pgErrorCode(err);
     if (code === "23505") {
       return { error: "رقم اللوحة مستخدم بالفعل لمركبة أخرى." };
     }
