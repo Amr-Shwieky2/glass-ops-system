@@ -1,0 +1,56 @@
+# Self-hosted stack (ARCHITECTURE.md section 9): Postgres + the Next.js app,
+# on a machine the company controls. No account, no card, no usage cap.
+#
+# Credentials come from a local .env file next to this one (not committed —
+# see .gitignore's `.env*` rule) via Compose's own ${VAR} interpolation.
+# Required variables: POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB.
+#
+# This stack is entirely separate from this machine's native (non-Docker)
+# Postgres used for local dev — different container, different named
+# volume, and its own credentials; nothing here reads or writes that
+# database.
+#
+# NOTE: no worker/scheduled-sweep service is defined here yet. ARCHITECTURE.md
+# section 9 mentions "a small worker container for scheduled notification
+# sweeps", but no scheduled-job entrypoint exists in the codebase as of this
+# phase — adding a service that runs nothing real would misrepresent what
+# this stack does. That remains a documented gap for a future phase.
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Deliberately no top-level `ports:` mapping — only the app service
+    # needs to reach Postgres, over the compose-internal network by service
+    # name, which needs no host port exposure at all in a real deployment.
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      NODE_ENV: production
+    ports:
+      # Host 3001 -> container 3000: the native dev server already owns
+      # host port 3000 on this machine, so the containerized app is
+      # published on 3001 instead.
+      - "3001:3000"
+
+volumes:
+  postgres_data:
