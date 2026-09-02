@@ -25,3 +25,21 @@ export function getTodayRangeUtc(now: Date = new Date()): { start: Date; end: Da
   const end = fromZonedTime(new Date(year, month, date + 1, 0, 0, 0, 0), COMPANY_TIMEZONE);
   return { start, end };
 }
+
+/**
+ * "Today" in the company's timezone as a plain "YYYY-MM-DD" date string —
+ * the shape date-stamping columns (e.g. vehicle_responsibility_history's
+ * start_date/end_date) expect. Companion to getTodayRangeUtc's UTC-instant
+ * range for call sites that need a local calendar date instead. Deliberately
+ * NOT `new Date().toISOString().slice(0, 10)` — that reads the UTC date,
+ * which drifts a day off the company's actual local date for part of every
+ * day (e.g. after local midnight but before UTC midnight, Asia/Jerusalem
+ * being ahead of UTC).
+ */
+export function getTodayDateString(now: Date = new Date()): string {
+  const zonedNow = toZonedTime(now, COMPANY_TIMEZONE);
+  const year = zonedNow.getFullYear();
+  const month = String(zonedNow.getMonth() + 1).padStart(2, "0");
+  const date = String(zonedNow.getDate()).padStart(2, "0");
+  return `${year}-${month}-${date}`;
+}

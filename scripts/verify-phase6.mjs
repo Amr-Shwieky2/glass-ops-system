@@ -272,12 +272,19 @@ async function main() {
     await employeeCtx.clearCookies();
     await login(page, "0502222222", "password123");
     await page.goto(`${BASE_URL}${nabilHref}`, { waitUntil: "networkidle" });
+    // Nabil's job also carries a pending (unrelated) hardware job_cost row
+    // (seeded in Phase 8), which renders its own اعتماد/رفض pair via
+    // CostDecisionButtons alongside the factory decision pair here — same
+    // Arabic text, different feature. Target the factory-specific
+    // aria-labels (added for exactly this disambiguation) rather than the
+    // shared visible text, so this check verifies the factory decision
+    // buttons specifically instead of colliding with the cost ones.
     check(
       "Mohammad sees decision buttons",
-      (await page.locator('button:has-text("اعتماد السعر")').count()) === 1 &&
-        (await page.locator('button:has-text("رفض")').count()) === 1,
+      (await page.locator('button[aria-label="اعتماد سعر المصنع"]').count()) === 1 &&
+        (await page.locator('button[aria-label="رفض سعر المصنع"]').count()) === 1,
     );
-    await page.click('button:has-text("اعتماد السعر")');
+    await page.click('button[aria-label="اعتماد سعر المصنع"]');
     await page.waitForSelector('[role="alertdialog"]', { timeout: 10000 });
     await page
       .locator('[role="alertdialog"]')
@@ -296,9 +303,14 @@ async function main() {
       text.includes("يحتاج إصلاح") && !text.includes("جاهز من المصنع"),
     );
 
+    // Nabil's job also carries the pre-seeded pending hardware job_costs
+    // row (unrelated to this factory approval) — filter by category so
+    // this checks the factory_glass row specifically, not every category
+    // on the job.
     const nabilCost = await pool.query(
       `select jc.amount, jc.status, jc.category from job_costs jc
-       join jobs j on j.id = jc.job_id where j.job_number = 'JOB-2026-0005'`,
+       join jobs j on j.id = jc.job_id
+       where j.job_number = 'JOB-2026-0005' and jc.category = 'factory_glass'`,
     );
     check(
       "job_costs row booked for Nabil (800.00, factory_glass, approved)",

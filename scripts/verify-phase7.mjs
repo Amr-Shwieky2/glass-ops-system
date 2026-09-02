@@ -342,17 +342,23 @@ async function main() {
     // -----------------------------------------------------------------
     // Part D: unauthorized — a user holding NONE of the four scheduling
     // permissions cannot see the "schedule appointment" trigger, even on
-    // a job they ARE otherwise involved in. Every seeded demo user holds
-    // at least one of the four (create_measurement/assign_installer/
-    // create_repair/view_all_jobs), so this temporarily strips Basel's
-    // one qualifying permission (create_measurement) via a direct DB
-    // write, checks the DOM, then restores it — mirroring the DOM-absence
-    // permission-denial pattern from verify-phase5.mjs/verify-phase6.mjs.
+    // a job they ARE otherwise involved in. The four qualifying
+    // permissions are create_measurement/assign_installer/create_repair/
+    // view_all_jobs (src/app/(app)/jobs/[id]/page.tsx's
+    // canScheduleAppointment = canAny(...)). Basel is seeded holding TWO
+    // of those four — create_measurement AND create_repair — so both must
+    // be stripped to actually reach "none of the 4"; stripping only
+    // create_measurement (as this script originally did) still leaves
+    // create_repair, and the trigger correctly stays visible. Strip both
+    // via a direct DB write, check the DOM, then restore both — mirroring
+    // the DOM-absence permission-denial pattern from
+    // verify-phase5.mjs/verify-phase6.mjs.
     // -----------------------------------------------------------------
     console.log("\n--- Part D: unauthorized — no scheduling permission at all ---");
+    const baselSchedulingKeys = ["create_measurement", "create_repair"];
     await pool.query(
-      `delete from user_permissions where user_id = $1 and permission_key = 'create_measurement'`,
-      [baselId],
+      `delete from user_permissions where user_id = $1 and permission_key = any($2::text[])`,
+      [baselId, baselSchedulingKeys],
     );
     try {
       await employeeCtx.clearCookies();
@@ -365,18 +371,20 @@ async function main() {
         (await page.locator('button:has-text("جدولة موعد")').count()) === 0,
       );
     } finally {
-      await pool.query(
-        `insert into user_permissions (user_id, permission_key, granted_by_user_id)
-         values ($1, 'create_measurement', $2) on conflict do nothing`,
-        [baselId, amrId],
-      );
+      for (const key of baselSchedulingKeys) {
+        await pool.query(
+          `insert into user_permissions (user_id, permission_key, granted_by_user_id)
+           values ($1, $2, $3) on conflict do nothing`,
+          [baselId, key, amrId],
+        );
+      }
     }
     // Confirm the restore actually took (next login reflects fresh permissions).
     await employeeCtx.clearCookies();
     await login(page, "0504444444", "password123");
     await page.goto(`${BASE_URL}${ahmadHref}`, { waitUntil: "networkidle" });
     check(
-      "Basel's create_measurement permission (and 'جدولة موعد' trigger) restored after the test",
+      "Basel's scheduling permissions (and 'جدولة موعد' trigger) restored after the test",
       (await page.locator('button:has-text("جدولة موعد")').count()) === 1,
     );
 

@@ -56,7 +56,12 @@ function RejectDialog({ jobId, submissionId }: { jobId: string; submissionId: st
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm" variant="outline" className="text-destructive hover:text-destructive">
+        <Button
+          size="sm"
+          variant="outline"
+          className="text-destructive hover:text-destructive"
+          aria-label="رفض سعر المصنع"
+        >
           <XCircle className="size-4" />
           رفض
         </Button>
@@ -107,7 +112,7 @@ export function FactoryDecisionButtons({
     <div className="flex flex-wrap items-center gap-2">
       <AlertDialog>
         <AlertDialogTrigger asChild>
-          <Button size="sm">
+          <Button size="sm" aria-label="اعتماد سعر المصنع">
             <CheckCircle2 className="size-4" />
             اعتماد السعر
           </Button>

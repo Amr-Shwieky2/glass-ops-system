@@ -10,6 +10,7 @@ import { can } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
 import { parseNonNegativeMoneyInput } from "@/server/money";
+import { getTodayDateString } from "@/lib/company-day";
 
 /**
  * Extracts a Postgres error code (e.g. "23505" for a unique-violation)
@@ -35,8 +36,17 @@ function emptyToUndefined(value: FormDataEntryValue | null): string | undefined 
   return s.length > 0 ? s : undefined;
 }
 
+/**
+ * "Today" as a "YYYY-MM-DD" string, in the company's own timezone
+ * (Asia/Jerusalem — see src/lib/company-day.ts), not raw UTC. Vehicle
+ * responsibility history is date-stamped against the company's actual
+ * operating day, same convention as My Day / the dashboard's "today"
+ * schedule (getTodayRangeUtc), so this reuses that module's timezone
+ * rather than new Date().toISOString(), which reads the UTC date and
+ * drifts a day off Asia/Jerusalem's local date for part of every day.
+ */
 function todayDateString(): string {
-  return new Date().toISOString().slice(0, 10);
+  return getTodayDateString();
 }
 
 /** The day before a "YYYY-MM-DD" date string, as a "YYYY-MM-DD" string. */
