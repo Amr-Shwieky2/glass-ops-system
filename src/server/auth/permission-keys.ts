@@ -59,6 +59,16 @@ export const PERMISSIONS = {
   // them, so these two fill that gap rather than overloading MANAGE_USERS.
   MANAGE_SETTINGS: "manage_settings",
   VIEW_AUDIT_LOG: "view_audit_log",
+
+  // Same gap as the two above, same fix: VIEW_JOB_COSTS only covers
+  // *viewing* the cost ledger (see its catalogue description below) — the
+  // base spec never named a permission for actually *recording* a job
+  // cost. Factory costs are booked automatically by APPROVE_FACTORY_PRICE
+  // and installer/daily-worker labor costs are booked automatically by
+  // the compensation module, so neither needs a new key — but hardware /
+  // external_contractor / aluminum_contractor / other costs had no entry
+  // path at all until this key.
+  MANAGE_JOB_COSTS: "manage_job_costs",
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -100,6 +110,7 @@ export const PERMISSION_CATALOGUE: PermissionSeed[] = [
 
   { key: PERMISSIONS.VIEW_PROFITABILITY, label: "View Profitability", description: "See revenue, cost and margin figures.", category: "Financial visibility" },
   { key: PERMISSIONS.VIEW_JOB_COSTS, label: "View Job Costs", description: "See the cost ledger of a job.", category: "Financial visibility" },
+  { key: PERMISSIONS.MANAGE_JOB_COSTS, label: "Manage Job Costs", description: "Record hardware/contractor/other job costs.", category: "Financial visibility" },
   { key: PERMISSIONS.VIEW_TECHNICIAN_BALANCES, label: "View Technician Balances", description: "See any technician's ledger/balance.", category: "Financial visibility" },
 
   { key: PERMISSIONS.MANAGE_TECHNICIAN_PAYMENTS, label: "Manage Technician Payments", description: "Approve technician payment reports and adjustments.", category: "Technician compensation" },
