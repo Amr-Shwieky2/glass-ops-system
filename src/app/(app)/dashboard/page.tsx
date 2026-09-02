@@ -8,6 +8,7 @@ import { can, canAny } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
 import { involvementFilter } from "@/server/jobs/queries";
 import { getTodayRangeUtc } from "@/lib/company-day";
+import { getOpenRepairsCount, getOpenRepairs } from "@/server/repairs/queries";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +33,13 @@ const APPOINTMENT_TYPE_LABEL_AR: Record<string, string> = {
   other: "أخرى",
 };
 
+const REPAIR_STATUS_LABEL_AR: Record<string, string> = {
+  open: "مفتوح",
+  scheduled: "مجدول",
+  in_progress: "قيد التنفيذ",
+  resolved: "تم الحل",
+};
+
 async function getDashboardStats(restrictToUserId: string | undefined) {
   const { start: todayStart, end: todayEnd } = getTodayRangeUtc();
 
@@ -41,6 +49,8 @@ async function getDashboardStats(restrictToUserId: string | undefined) {
     [{ value: awaitingApprovalCount }],
     readyWithoutInstall,
     todayAppointmentRows,
+    openRepairsCount,
+    openRepairs,
   ] = await Promise.all([
       db
         .select({ value: count() })
@@ -123,6 +133,8 @@ async function getDashboardStats(restrictToUserId: string | undefined) {
           ),
         )
         .orderBy(asc(appointments.scheduledStart)),
+      getOpenRepairsCount(),
+      getOpenRepairs(),
     ]);
 
   return {
@@ -134,6 +146,8 @@ async function getDashboardStats(restrictToUserId: string | undefined) {
     installationsToday: todayAppointmentRows.filter((a) => a.type === "installation").length,
     repairsToday: todayAppointmentRows.filter((a) => a.type === "repair").length,
     todayAppointments: todayAppointmentRows,
+    openRepairsCount,
+    openRepairs,
   };
 }
 
@@ -198,6 +212,20 @@ export default async function DashboardPage() {
             </p>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              إصلاحات مفتوحة
+            </CardTitle>
+            <Wrench className="size-5 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold text-foreground">
+              {stats.openRepairsCount}
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       <Card>
@@ -232,6 +260,46 @@ export default async function DashboardPage() {
                     عرض المهمة
                     <ArrowLeft className="size-4" />
                   </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Wrench className="size-5 text-warning" />
+            إصلاحات مفتوحة
+          </CardTitle>
+          <CardDescription>
+            طلبات إصلاح لم تُحل بعد — تبقى ظاهرة هنا حتى يتم حلها.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {stats.openRepairs.length === 0 ? (
+            <EmptyState title="لا توجد إصلاحات مفتوحة حالياً" />
+          ) : (
+            <ul className="divide-y">
+              {stats.openRepairs.map((r) => (
+                <li key={r.id} className="flex items-center justify-between py-3">
+                  <div>
+                    <p className="font-medium text-foreground">
+                      {r.jobNumber} · {r.customerName}
+                    </p>
+                    <p className="text-sm text-muted-foreground">{r.problemDescription}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Badge variant="outline">{REPAIR_STATUS_LABEL_AR[r.status] ?? r.status}</Badge>
+                    <Link
+                      href={`/jobs/${r.jobId}`}
+                      className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                    >
+                      عرض المهمة
+                      <ArrowLeft className="size-4" />
+                    </Link>
+                  </div>
                 </li>
               ))}
             </ul>

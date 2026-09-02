@@ -17,6 +17,7 @@ import { getProductionRequestForJob } from "@/server/production/queries";
 import { getJobAppointments } from "@/server/appointments/queries";
 import { getJobPayments } from "@/server/payments/queries";
 import { getJobCostsForJob, getJobProfitability } from "@/server/costs/queries";
+import { getJobRepairs } from "@/server/repairs/queries";
 import {
   getJobCompensationEntries,
   getCompensationRules,
@@ -43,6 +44,8 @@ import { CompensationSection } from "./compensation-section";
 import { getCompensationEntryTechnicianNames } from "./get-compensation-entry-technicians";
 import { AssignDialog } from "./assign-dialog";
 import { CancelJobDialog } from "./cancel-job-dialog";
+import { CloseJobButton } from "./close-job-button";
+import { RepairsSection } from "./repairs-section";
 import { ConfirmRemoveButton } from "./confirm-remove-button";
 import { deleteJobItem, removeAssignment } from "@/server/jobs/actions";
 
@@ -111,6 +114,7 @@ export default async function JobDetailPage({
     compensationRules,
     bonusRules,
     penaltyRules,
+    jobRepairs,
   ] = await Promise.all([
     getAllWorkTypes(),
     getAssignableUsers(),
@@ -128,6 +132,7 @@ export default async function JobDetailPage({
     getCompensationRules(),
     getBonusRules(),
     getPenaltyRules(),
+    getJobRepairs(job.id),
   ]);
 
   const canCreateMeasurement = can(user, PERMISSIONS.CREATE_MEASUREMENT);
@@ -140,6 +145,8 @@ export default async function JobDetailPage({
   const canCloseDeal = can(user, PERMISSIONS.CLOSE_DEAL);
   const canAssign = can(user, PERMISSIONS.ASSIGN_INSTALLER);
   const canCancel = can(user, PERMISSIONS.CLOSE_DEAL) && !job.isTerminal;
+  const canClose = can(user, PERMISSIONS.CLOSE_DEAL) && !job.isTerminal;
+  const canCreateRepair = can(user, PERMISSIONS.CREATE_REPAIR);
   const canCreateProductionOrder = can(user, PERMISSIONS.CREATE_PRODUCTION_ORDER);
   const canApproveFactoryPrice = can(user, PERMISSIONS.APPROVE_FACTORY_PRICE);
   const canScheduleAppointment = canAny(user, [
@@ -183,6 +190,10 @@ export default async function JobDetailPage({
     ? sumMoney(job.items.map((i) => i.salePrice ?? "0"))
     : null;
 
+  const responsibleUserNameById = Object.fromEntries(
+    assignableUsers.map((u) => [u.id, u.name]),
+  );
+
   return (
     <div className="space-y-6">
       <Link
@@ -201,7 +212,10 @@ export default async function JobDetailPage({
           </div>
           {job.title && <p className="text-muted-foreground">{job.title}</p>}
         </div>
-        {canCancel && <CancelJobDialog jobId={job.id} />}
+        <div className="flex items-center gap-2">
+          {canClose && <CloseJobButton jobId={job.id} />}
+          {canCancel && <CancelJobDialog jobId={job.id} />}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -399,6 +413,15 @@ export default async function JobDetailPage({
         assignableUsers={assignableUsers}
         canScheduleAppointment={canScheduleAppointment}
       />
+
+      {canCreateRepair && (
+        <RepairsSection
+          jobId={job.id}
+          repairs={jobRepairs}
+          assignableUsers={assignableUsers}
+          responsibleUserNameById={responsibleUserNameById}
+        />
+      )}
 
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0">
