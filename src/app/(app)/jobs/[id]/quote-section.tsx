@@ -1,0 +1,239 @@
+import { FileText, CheckCircle2 } from "lucide-react";
+import type { VariantProps } from "class-variance-authority";
+import { formatILS } from "@/server/money";
+import type { QuoteForJob } from "@/server/quotes/queries";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Badge, type badgeVariants } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { QuoteBuilderDialog, type QuoteBuilderItem } from "./quote-builder-dialog";
+import { SendQuoteButton } from "./send-quote-button";
+import { ConvertToJobButton } from "./convert-to-job-button";
+
+type BadgeVariant = NonNullable<VariantProps<typeof badgeVariants>["variant"]>;
+
+const dateFmt = new Intl.DateTimeFormat("ar", {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  numberingSystem: "latn",
+});
+
+const QUOTE_STATUS_LABEL: Record<string, string> = {
+  draft: "مسودة",
+  sent: "بانتظار توقيع العميل",
+  signed: "موقّع",
+  expired: "منتهي الصلاحية",
+  superseded: "مستبدل",
+};
+
+const QUOTE_STATUS_VARIANT: Record<string, BadgeVariant> = {
+  draft: "outline",
+  sent: "warning",
+  signed: "success",
+  expired: "destructive",
+  superseded: "outline",
+};
+
+interface JobItemForPrefill {
+  description: string | null;
+  quantity: string;
+  unit: string | null;
+  salePrice: string | null;
+  workTypeLabelAr?: string | null;
+}
+
+/** Best-effort starting point for a brand-new quote from the job's existing
+ * price-only items (section 21 -> 19 handoff). job_items stores a single
+ * salePrice per row treated as that row's LINE total (see the itemsTotal
+ * computation just above this section on the page) — so the per-unit price
+ * the quote builder wants is derived by dividing it back out; the pricing
+ * person can freely adjust it either way before saving. */
+function deriveQuoteItemsFromJobItems(items: JobItemForPrefill[]): QuoteBuilderItem[] {
+  return items.map((item) => {
+    const qty = Number(item.quantity) || 1;
+    const price = Number(item.salePrice ?? 0);
+    const unitPrice = qty > 0 && item.salePrice ? (price / qty).toFixed(2) : (item.salePrice ?? "0.00");
+    return {
+      description: item.description || item.workTypeLabelAr || "بند عمل",
+      quantity: item.quantity,
+      unit: item.unit ?? undefined,
+      unitPrice,
+    };
+  });
+}
+
+export function QuoteSection({
+  jobId,
+  quote,
+  jobItems,
+  jobSourceQuoteVersionId,
+  workTypes,
+  customerPhone,
+  defaultValidUntil,
+  canCreateQuote,
+  canSendQuote,
+  canCloseDeal,
+}: {
+  jobId: string;
+  quote: QuoteForJob | null;
+  jobItems: JobItemForPrefill[];
+  jobSourceQuoteVersionId: string | null;
+  workTypes: { id: string; labelAr: string; defaultUnit: string }[];
+  customerPhone?: string | null;
+  defaultValidUntil: string;
+  canCreateQuote: boolean;
+  canSendQuote: boolean;
+  canCloseDeal: boolean;
+}) {
+  const version = quote?.currentVersion ?? null;
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between space-y-0">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <FileText className="size-5 text-muted-foreground" />
+          عرض السعر
+          {quote && (
+            <Badge variant={QUOTE_STATUS_VARIANT[quote.status] ?? "default"}>
+              {QUOTE_STATUS_LABEL[quote.status] ?? quote.status}
+            </Badge>
+          )}
+        </CardTitle>
+        {canCreateQuote && !quote && (
+          <QuoteBuilderDialog
+            jobId={jobId}
+            workTypes={workTypes}
+            initialItems={
+              jobItems.length > 0 ? deriveQuoteItemsFromJobItems(jobItems) : undefined
+            }
+            initialValidUntil={defaultValidUntil}
+            triggerLabel="إنشاء عرض سعر"
+          />
+        )}
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {!quote || !version ? (
+          <EmptyState
+            title="لم يُنشأ أي عرض سعر بعد"
+            description="أنشئ عرض سعر لإرساله للعميل والحصول على توقيعه إلكترونياً."
+            className="border-0 p-6"
+          />
+        ) : (
+          <>
+            <p className="flex flex-wrap items-center gap-x-1 text-sm text-muted-foreground">
+              <span>
+                {quote.quoteNumber} · الإصدار {version.versionNumber}
+                {version.validUntil && ` · صالح حتى ${dateFmt.format(new Date(version.validUntil))}`}
+                {quote.isExpired && " · منتهي الصلاحية"}
+              </span>
+              <a
+                href={`/api/quotes/${quote.id}/pdf`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+              >
+                · عرض PDF
+              </a>
+            </p>
+
+            <ul className="divide-y rounded-lg border">
+              {version.items.map((item) => (
+                <li key={item.id} className="flex items-center justify-between p-3 text-sm">
+                  <div>
+                    <p className="font-medium text-foreground">
+                      {item.workTypeLabelAr || item.description}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {item.quantity} {item.unit ?? ""} × {formatILS(item.unitPrice)}
+                    </p>
+                  </div>
+                  <span dir="ltr" className="font-medium text-foreground">
+                    {formatILS(item.lineTotal)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="flex items-center justify-between text-base font-bold">
+              <span>الإجمالي</span>
+              <span dir="ltr">{formatILS(version.total)}</span>
+            </div>
+
+            {quote.status === "signed" && (
+              <div className="flex items-center gap-2 rounded-lg bg-green-50 p-3 text-sm text-green-800">
+                <CheckCircle2 className="size-4 shrink-0" />
+                تم توقيع هذا العرض من العميل.
+              </div>
+            )}
+
+            {quote.versionHistory.length > 1 && (
+              <div className="text-xs text-muted-foreground">
+                نسخ سابقة:{" "}
+                {quote.versionHistory
+                  .filter((v) => v.id !== version.id)
+                  .map((v) => `#${v.versionNumber}${v.isSigned ? " (موقّعة)" : ""}`)
+                  .join("، ")}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+              {canCreateQuote && quote.status !== "signed" && (
+                <QuoteBuilderDialog
+                  jobId={jobId}
+                  quoteId={quote.id}
+                  workTypes={workTypes}
+                  initialItems={version.items.map((i) => ({
+                    workTypeId: i.workTypeId ?? undefined,
+                    description: i.description,
+                    quantity: i.quantity,
+                    unit: i.unit ?? undefined,
+                    unitPrice: i.unitPrice,
+                  }))}
+                  initialPaymentTerms={version.paymentTerms ?? undefined}
+                  initialWorkTerms={version.workTerms ?? undefined}
+                  initialValidUntil={version.validUntil ?? undefined}
+                  triggerLabel={
+                    quote.status === "draft" ? "متابعة تحرير المسودة" : "تعديل العرض (نسخة جديدة)"
+                  }
+                  triggerVariant="outline"
+                />
+              )}
+              {canCreateQuote && quote.status === "signed" && (
+                <QuoteBuilderDialog
+                  jobId={jobId}
+                  quoteId={quote.id}
+                  workTypes={workTypes}
+                  initialItems={version.items.map((i) => ({
+                    workTypeId: i.workTypeId ?? undefined,
+                    description: i.description,
+                    quantity: i.quantity,
+                    unit: i.unit ?? undefined,
+                    unitPrice: i.unitPrice,
+                  }))}
+                  initialPaymentTerms={version.paymentTerms ?? undefined}
+                  initialWorkTerms={version.workTerms ?? undefined}
+                  initialValidUntil={version.validUntil ?? undefined}
+                  triggerLabel="تعديل (سينشئ نسخة جديدة تحتاج توقيعاً جديداً)"
+                  triggerVariant="outline"
+                  warnEditingSigned
+                />
+              )}
+              {canSendQuote && quote.status !== "signed" && (
+                <SendQuoteButton
+                  jobId={jobId}
+                  quoteId={quote.id}
+                  customerPhone={customerPhone}
+                  label={quote.status === "sent" ? "إعادة إرسال / عرض الرابط" : "إرسال للعميل"}
+                />
+              )}
+              {canCloseDeal &&
+                quote.signedVersionId &&
+                quote.signedVersionId !== jobSourceQuoteVersionId && (
+                  <ConvertToJobButton jobId={jobId} quoteId={quote.id} />
+                )}
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

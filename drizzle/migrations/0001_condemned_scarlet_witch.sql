@@ -1,0 +1,2 @@
+ALTER TABLE "job_costs" ADD COLUMN "ledger_entry_id" uuid;--> statement-breakpoint
+ALTER TABLE "job_costs" ADD CONSTRAINT "job_costs_ledger_entry_id_technician_ledger_entries_id_fk" FOREIGN KEY ("ledger_entry_id") REFERENCES "public"."technician_ledger_entries"("id") ON DELETE set null ON UPDATE no action;
