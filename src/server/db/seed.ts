@@ -101,7 +101,7 @@ async function main() {
     PERMISSIONS.ASSIGN_INSTALLER,
     PERMISSIONS.VIEW_PROFITABILITY, PERMISSIONS.VIEW_JOB_COSTS,
     PERMISSIONS.VIEW_TECHNICIAN_BALANCES, PERMISSIONS.MANAGE_TECHNICIAN_PAYMENTS,
-    PERMISSIONS.APPROVE_REQUESTS, PERMISSIONS.MANAGE_CHECKS,
+    PERMISSIONS.APPROVE_REQUESTS, PERMISSIONS.MANAGE_CHECKS, PERMISSIONS.MANAGE_JOB_COSTS,
   ];
   const ISSAM_KEYS = [
     PERMISSIONS.VIEW_CUSTOMERS, PERMISSIONS.VIEW_ASSIGNED_JOBS,
@@ -809,6 +809,54 @@ async function main() {
     entityType: "customer_payment", entityId: pendingReport.id, requestedByUserId: issam.id,
     summary: "Issam reported a customer payment received: 1,000 ₪ (Nabil Odeh)",
     relatedJobId: nabilJob.id,
+  });
+
+  // ---------------------------------------------------------------------
+  // Phase 8 demo data: a pending job cost, a pending self-reported
+  // technician payment, an unconfirmed cash handover, and a second
+  // (further-out) incoming check — so the new Costs/Compensation/Finance
+  // approve-reject and confirm UIs all have something real to demonstrate
+  // without any manual setup.
+  // ---------------------------------------------------------------------
+  console.log("Seeding a pending job cost (hardware, awaiting approval) on Nabil's job...");
+  const [pendingHardwareCost] = await db.insert(schema.jobCosts).values({
+    jobId: nabilJob.id, category: "hardware", amount: "350.00",
+    description: "مفصلات باب ألمنيوم بديلة لإصلاح النبيل.", status: "pending",
+    createdByUserId: mohammad.id, incurredAt: dateOnly(daysAgo(0)), createdAt: daysAgo(0),
+  }).returning();
+  await db.insert(schema.approvalRequests).values({
+    entityType: "job_cost", entityId: pendingHardwareCost.id, requestedByUserId: mohammad.id,
+    summary: "محمد أضاف تكلفة مواد وتجهيزات بمبلغ 350.00 ₪ (مهمة نبيل عودة)",
+    relatedJobId: nabilJob.id,
+  });
+
+  console.log("Seeding a pending self-reported technician payment (Basel) awaiting approval...");
+  const [pendingBaselPayment] = await db.insert(schema.technicianLedgerEntries).values({
+    userId: basel.id, entryType: "payment_made", amount: "-200.00",
+    description: "دفعة نقدية استلمها باسل من الشركة.", relatedJobId: null,
+    approvalStatus: "pending", createdByUserId: basel.id, createdAt: daysAgo(0),
+  }).returning();
+  await db.insert(schema.approvalRequests).values({
+    entityType: "technician_ledger_entry", entityId: pendingBaselPayment.id, requestedByUserId: basel.id,
+    summary: "باسل أبلغ عن استلام دفعة بمبلغ 200.00 ₪ من الشركة",
+    relatedJobId: null,
+  });
+
+  console.log("Seeding an unconfirmed cash handover (Basel -> company)...");
+  // Basel's cash account already carries a +5,000 balance from the Nabil
+  // payment cash-in above with no transfer out yet, so a partial handover
+  // here leaves a plausible remaining balance either way, confirmed or not
+  // (createCashTransfer never posts cash_transactions until confirmed).
+  await db.insert(schema.cashTransfers).values({
+    fromCashAccountId: baselCash.id, toCashAccountId: companyCash.id, amount: "2000.00",
+    transferredAt: daysAgo(0), notes: "تسليم نقدية أسبوعية.", createdByUserId: basel.id,
+  });
+
+  console.log("Seeding a second incoming check, further out (not due-soon)...");
+  await db.insert(schema.incomingChecks).values({
+    customerId: mona.id, jobId: monaJob.id, amount: "500.00", checkNumber: "00119873",
+    bank: "בנק הפועלים / Bank Hapoalim", dueDate: dateOnly(daysFromNow(20)), receivedByUserId: mohammad.id,
+    status: "future", notes: "دفعة مقدمة، شيك مؤجل.",
   });
 
   console.log("Seeding number sequences (continuing on from the demo jobs/quotes above, which use hardcoded numbers rather than nextDocumentNumber())...");
