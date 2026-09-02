@@ -74,6 +74,8 @@ async function getDashboardStats(
   restrictToUserId: string | undefined,
   canSeeChecks: boolean,
   canSeeApprovals: boolean,
+  canSeeFactoryPrices: boolean,
+  canSeeCustomerBalances: boolean,
 ) {
   const { start: todayStart, end: todayEnd } = getTodayRangeUtc();
 
@@ -177,8 +179,12 @@ async function getDashboardStats(
     getOpenRepairs(restrictToUserId),
     getJobsWaitingForPricing(restrictToUserId),
     getJobsWaitingForQuoteSignature(restrictToUserId),
-    getFactoryPricesWaitingApproval(restrictToUserId),
-    getCustomersWithOutstandingBalance(restrictToUserId),
+    canSeeFactoryPrices
+      ? getFactoryPricesWaitingApproval(restrictToUserId)
+      : Promise.resolve({ items: [], total: 0 }),
+    canSeeCustomerBalances
+      ? getCustomersWithOutstandingBalance(restrictToUserId)
+      : Promise.resolve({ items: [], total: 0 }),
     canSeeChecks ? getChecksDueSoon() : Promise.resolve({ items: [], total: 0 }),
     canSeeApprovals ? getPendingApprovalsCount(restrictToUserId) : Promise.resolve(0),
   ]);
@@ -255,8 +261,23 @@ export default async function DashboardPage() {
   const canViewAll = can(user, PERMISSIONS.VIEW_ALL_JOBS);
   const canSeeChecks = can(user, PERMISSIONS.MANAGE_CHECKS);
   const canSeeApprovals = can(user, PERMISSIONS.APPROVE_REQUESTS);
+  const canSeeFactoryPrices = canAny(user, [
+    PERMISSIONS.CREATE_PRODUCTION_ORDER,
+    PERMISSIONS.APPROVE_FACTORY_PRICE,
+  ]);
+  const canSeeCustomerBalances = canAny(user, [
+    PERMISSIONS.COLLECT_PAYMENT,
+    PERMISSIONS.APPROVE_PAYMENT,
+    PERMISSIONS.VIEW_JOB_COSTS,
+  ]);
   const restrictToUserId = canViewAll ? undefined : user!.id;
-  const stats = await getDashboardStats(restrictToUserId, canSeeChecks, canSeeApprovals);
+  const stats = await getDashboardStats(
+    restrictToUserId,
+    canSeeChecks,
+    canSeeApprovals,
+    canSeeFactoryPrices,
+    canSeeCustomerBalances,
+  );
 
   const readyWithoutInstallPreview = stats.readyWithoutInstall
     .slice(0, PREVIEW_LIMIT)
@@ -315,7 +336,7 @@ export default async function DashboardPage() {
     });
   }
 
-  if (stats.factoryPricesWaitingApproval.total > 0) {
+  if (canSeeFactoryPrices && stats.factoryPricesWaitingApproval.total > 0) {
     categories.push({
       id: "factory-price-waiting-approval",
       icon: Factory,
@@ -330,7 +351,7 @@ export default async function DashboardPage() {
     });
   }
 
-  if (stats.customersWithOutstandingBalance.total > 0) {
+  if (canSeeCustomerBalances && stats.customersWithOutstandingBalance.total > 0) {
     categories.push({
       id: "customers-with-balance",
       icon: Banknote,

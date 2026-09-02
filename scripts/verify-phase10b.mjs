@@ -198,8 +198,10 @@ async function main() {
     row = await attentionRow(page, LABEL.waitingForSignature);
     check("Issam: waiting-for-quote-signature row PRESENT, shows Khaled's job (he measured it)", row.present && row.text.includes("JOB-2026-0003"));
 
-    row = await attentionRow(page, LABEL.factoryWaitingApproval);
-    check("Issam: factory-price-waiting-approval row PRESENT, shows Yasmin's job (he measured it)", row.present && row.text.includes("JOB-2026-0008"));
+    check(
+      "Issam: factory-price-waiting-approval row ABSENT entirely — lacks CREATE_PRODUCTION_ORDER/APPROVE_FACTORY_PRICE (a permission gate, not just involvement scoping; he measured Yasmin's job but still can't open /production)",
+      !(await attentionRow(page, LABEL.factoryWaitingApproval)).present,
+    );
 
     row = await attentionRow(page, LABEL.openRepairs);
     check("Issam: open-repairs row shows BOTH Reem's and Nabil's jobs (measured/deal-closed both)", row.present && row.text.includes("JOB-2026-0004") && row.text.includes("JOB-2026-0005"));

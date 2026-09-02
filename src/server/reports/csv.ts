@@ -5,12 +5,23 @@ import "server-only";
  * no new dependency needed for something this simple. A field is wrapped
  * in double quotes (with any embedded quote doubled) whenever it contains
  * a comma, quote, or newline; every other field is written as-is.
+ *
+ * Before that RFC 4180 quoting, neutralize CSV/formula injection: several
+ * exported columns (customer name, vehicle name, etc.) are ordinary
+ * user-entered text with no format restriction, and Excel/Sheets/
+ * LibreOffice will interpret a field starting with =, +, -, or @ as a
+ * formula when the CSV is opened (e.g. a customer named
+ * `=cmd|'/c calc'!A1`). Prefixing such a field with a leading apostrophe
+ * is the standard mitigation — spreadsheet apps render it as literal text
+ * instead of evaluating it, and plain CSV consumers just see an extra
+ * leading character on that one field.
  */
 function escapeCsvField(value: string): string {
-  if (/["\n\r,]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
+  const neutralized = /^[=+\-@]/.test(value) ? `'${value}` : value;
+  if (/["\n\r,]/.test(neutralized)) {
+    return `"${neutralized.replace(/"/g, '""')}"`;
   }
-  return value;
+  return neutralized;
 }
 
 /**
