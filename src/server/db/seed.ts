@@ -34,6 +34,19 @@ function daysFromNow(n: number): Date {
 function dateOnly(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
+/** daysFromNow(0)/daysFromNow(1) with an explicit local hour/minute — for
+ * Phase 7 appointments that need to land in "today"/"tomorrow" (Calendar,
+ * My Day, the dashboard's Today section all key off this). */
+function todayAt(hour: number, minute = 0): Date {
+  const d = daysFromNow(0);
+  d.setHours(hour, minute, 0, 0);
+  return d;
+}
+function tomorrowAt(hour: number, minute = 0): Date {
+  const d = daysFromNow(1);
+  d.setHours(hour, minute, 0, 0);
+  return d;
+}
 
 async function main() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -675,6 +688,107 @@ async function main() {
     status: "future", notes: "Second installment, post-dated at signing.",
   });
 
+  // ---------------------------------------------------------------------
+  // Job 6: مُنى خليل — a second ready_from_factory job, deliberately left
+  // with NO installation appointment. Reem's job (below, Phase 7 section)
+  // gets its installation scheduled and moves on to installation_scheduled,
+  // so without this one the dashboard's "ready from factory, no install
+  // date yet" card would have nothing left to show.
+  // ---------------------------------------------------------------------
+  console.log("Seeding Job 6: Mona (second ready-from-factory job, kept without an installation date)...");
+  const [mona] = await db.insert(schema.customers).values({
+    name: "منى خليل", phone: "+972505556006", address: "شارع الاستقلال 5، الناصرة", createdByUserId: mohammad.id,
+  }).returning();
+  const [monaJob] = await db.insert(schema.jobs).values({
+    jobNumber: "JOB-2026-0006", customerId: mona.id, statusId: statusByKey.ready_from_factory.id,
+    title: "Bathroom mirror", measuredByUserId: basel.id, pricingResponsibleUserId: mohammad.id,
+    dealClosedByUserId: mohammad.id, salePriceTotal: "1800.00", createdByUserId: mohammad.id, createdAt: daysAgo(10),
+  }).returning();
+  const [monaQuote] = await db.insert(schema.quotes).values({
+    quoteNumber: "Q-2026-0005", customerId: mona.id, jobId: monaJob.id, status: "signed",
+    createdByUserId: mohammad.id, createdAt: daysAgo(9),
+  }).returning();
+  const [monaQuoteV1] = await db.insert(schema.quoteVersions).values({
+    quoteId: monaQuote.id, versionNumber: 1,
+    paymentTerms: SETTINGS_DEFAULTS.quote_default_terms.paymentTerms,
+    workTerms: SETTINGS_DEFAULTS.quote_default_terms.workTerms,
+    validUntil: dateOnly(daysAgo(0)), subtotal: "1800.00", total: "1800.00",
+    isSigned: true, createdByUserId: mohammad.id, createdAt: daysAgo(9),
+  }).returning();
+  await db.insert(schema.quoteItems).values({
+    quoteVersionId: monaQuoteV1.id, workTypeId: workTypeByKey.mirror.id, description: "Bathroom mirror, bevelled edge", quantity: "3", unit: "meter", unitPrice: "600.00", lineTotal: "1800.00", sortOrder: 0,
+  });
+  await db.insert(schema.quoteSignatures).values({
+    quoteVersionId: monaQuoteV1.id, signedAt: daysAgo(8), customerNameAtSigning: "منى خليل",
+    customerPhoneAtSigning: mona.phone, customerAddressAtSigning: mona.address,
+    agreedToTerms: true, signatureImage: TINY_PNG,
+  });
+  await db.update(schema.quotes).set({ currentVersionId: monaQuoteV1.id, signedVersionId: monaQuoteV1.id }).where(sql`${schema.quotes.id} = ${monaQuote.id}`);
+  await db.update(schema.jobs).set({ quoteId: monaQuote.id, sourceQuoteVersionId: monaQuoteV1.id }).where(sql`${schema.jobs.id} = ${monaJob.id}`);
+  await db.insert(schema.jobItems).values({
+    jobId: monaJob.id, workTypeId: workTypeByKey.mirror.id, description: "Bathroom mirror, bevelled edge", quantity: "3", unit: "meter", salePrice: "1800.00", status: "ready",
+  });
+  const [monaProdRequest] = await db.insert(schema.productionRequests).values({
+    jobId: monaJob.id, requestedByUserId: mohammad.id, details: "Bathroom mirror, bevelled edge, 3 linear meters.",
+    status: "approved", estimatedReadyDate: dateOnly(daysAgo(1)), createdAt: daysAgo(7),
+  }).returning();
+  await db.insert(schema.factorySubmissions).values({
+    productionRequestId: monaProdRequest.id, submittedPrice: "500.00", submittedAt: daysAgo(6),
+    approvalStatus: "approved", approvedByUserId: mohammad.id, approvedAt: daysAgo(6),
+  });
+
+  // ---------------------------------------------------------------------
+  // Phase 7 appointments — Calendar / My Day / the dashboard's "Today"
+  // section all need real data to show without any manual setup.
+  // ---------------------------------------------------------------------
+  console.log("Seeding Phase 7 appointments (today's measurement + installation, tomorrow's repair)...");
+
+  // Sara is waiting_for_pricing; narratively, the customer asked to add a
+  // bathroom mirror to the same job, so a follow-up measurement is booked
+  // for today before Mohammad can finalize the price. Assigned to Basel.
+  const [saraFollowUpAppt] = await db.insert(schema.appointments).values({
+    jobId: saraJob.id, type: "measurement", scheduledStart: todayAt(10, 0),
+    location: sara.address, status: "scheduled", createdByUserId: basel.id,
+    notes: "قياس إضافي: مرآة حمام أضافها العميل.",
+  }).returning();
+  await db.insert(schema.appointmentAssignees).values({
+    appointmentId: saraFollowUpAppt.id, userId: basel.id,
+  });
+
+  // Reem's storefront glass is ready from the factory — installation is
+  // scheduled for today, 09:00, with both Issam and Basel (mirrors the
+  // master scenario's own multi-technician installation). This is the one
+  // real workflow step in this seed script, so — mirroring how the rest of
+  // seed.ts sets every status directly rather than going through the
+  // Server Action layer — the job's status is moved forward by hand here,
+  // exactly like scheduleAppointmentAction would have done.
+  const [reemInstallAppt] = await db.insert(schema.appointments).values({
+    jobId: reemJob.id, type: "installation", scheduledStart: todayAt(9, 0),
+    location: reem.address, status: "scheduled", createdByUserId: mohammad.id,
+    notes: "Installation scheduled: Tuesday 09:00.",
+  }).returning();
+  await db.insert(schema.appointmentAssignees).values([
+    { appointmentId: reemInstallAppt.id, userId: issam.id },
+    { appointmentId: reemInstallAppt.id, userId: basel.id },
+  ]);
+  await db
+    .update(schema.jobs)
+    .set({ statusId: statusByKey.installation_scheduled.id })
+    .where(sql`${schema.jobs.id} = ${reemJob.id}`);
+
+  // Nabil already has an open repair (scheduled for tomorrow, see the
+  // `repairs` row above) — give it a matching calendar appointment so
+  // Calendar's week/month views have more than one day of data. Assigned
+  // to Issam (the repair's responsibleUserId).
+  const [nabilRepairAppt] = await db.insert(schema.appointments).values({
+    jobId: nabilJob.id, type: "repair", scheduledStart: tomorrowAt(11, 0),
+    location: nabil.address, status: "scheduled", createdByUserId: issam.id,
+    notes: "Door hinge adjustment.",
+  }).returning();
+  await db.insert(schema.appointmentAssignees).values({
+    appointmentId: nabilRepairAppt.id, userId: issam.id,
+  });
+
   console.log("Seeding external contractor + outgoing check (for screen coverage)...");
   await db.insert(schema.externalContractors).values({
     name: "أبو علي للألمنيوم / Abu Ali Aluminum", phone: "+972506661234", serviceType: "Aluminum installation",
@@ -699,8 +813,8 @@ async function main() {
 
   console.log("Seeding number sequences (continuing on from the demo jobs/quotes above, which use hardcoded numbers rather than nextDocumentNumber())...");
   await db.insert(schema.numberSequences).values([
-    { scope: "job", year: 2026, lastValue: 5 }, // JOB-2026-0001..0005 used above
-    { scope: "quote", year: 2026, lastValue: 4 }, // Q-2026-0001..0004 used above
+    { scope: "job", year: 2026, lastValue: 6 }, // JOB-2026-0001..0006 used above
+    { scope: "quote", year: 2026, lastValue: 5 }, // Q-2026-0001..0005 used above
   ]);
 
   console.log("Done.");
