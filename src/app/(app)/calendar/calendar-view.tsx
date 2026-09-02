@@ -84,7 +84,7 @@ export function CalendarView({
         </div>
       )}
 
-      <div className="rounded-xl border bg-card p-2 sm:p-4">
+      <div className="overflow-x-hidden rounded-xl border bg-card p-2 sm:p-4">
         <FullCalendar
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin]}

@@ -118,7 +118,7 @@ async function main() {
   }
 
   let reemHref, ahmadHref;
-  let jobANumber, jobAId, jobCNumber, jobCId;
+  let jobANumber, jobAId, jobCNumber;
 
   try {
     console.log("=== Setup: locate seeded jobs ===");
@@ -193,7 +193,6 @@ async function main() {
       page.waitForURL(/\/jobs\/[0-9a-f-]{36}$/, { timeout: 10000 }),
       page.click('button:has-text("إنشاء المهمة")'),
     ]);
-    jobCId = new URL(page.url()).pathname.split("/").pop();
     jobCNumber = (await page.locator("h1").first().innerText()).trim();
 
     await page.click('button:has-text("جدولة موعد")');
