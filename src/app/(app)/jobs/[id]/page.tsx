@@ -14,6 +14,8 @@ import {
 import { getQuoteForJob } from "@/server/quotes/queries";
 import { defaultQuoteValidUntil } from "@/server/quotes/versions";
 import { getProductionRequestForJob } from "@/server/production/queries";
+import { getJobAppointments } from "@/server/appointments/queries";
+import { getJobPayments } from "@/server/payments/queries";
 import { getSetting } from "@/server/settings";
 import { formatILS, sumMoney } from "@/server/money";
 import { jobStatusVariant } from "@/lib/job-status-style";
@@ -21,10 +23,13 @@ import { Forbidden } from "@/components/forbidden";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LocationButtons } from "@/components/location-buttons";
 import { AddMeasurementDialog } from "./add-measurement-dialog";
 import { AddJobItemDialog } from "./add-job-item-dialog";
 import { QuoteSection } from "./quote-section";
 import { ProductionSection } from "./production-section";
+import { AppointmentsSection } from "./appointments-section";
+import { PaymentsSection } from "./payments-section";
 import { AssignDialog } from "./assign-dialog";
 import { CancelJobDialog } from "./cancel-job-dialog";
 import { ConfirmRemoveButton } from "./confirm-remove-button";
@@ -85,6 +90,8 @@ export default async function JobDetailPage({
     quote,
     quoteValidityDays,
     productionRequest,
+    jobAppointments,
+    jobPayments,
   ] = await Promise.all([
     getAllWorkTypes(),
     getAssignableUsers(),
@@ -92,6 +99,8 @@ export default async function JobDetailPage({
     getQuoteForJob(job.id),
     getSetting("quote_validity_days"),
     getProductionRequestForJob(job.id),
+    getJobAppointments(job.id),
+    getJobPayments(job.id),
   ]);
 
   const canCreateMeasurement = can(user, PERMISSIONS.CREATE_MEASUREMENT);
@@ -106,6 +115,19 @@ export default async function JobDetailPage({
   const canCancel = can(user, PERMISSIONS.CLOSE_DEAL) && !job.isTerminal;
   const canCreateProductionOrder = can(user, PERMISSIONS.CREATE_PRODUCTION_ORDER);
   const canApproveFactoryPrice = can(user, PERMISSIONS.APPROVE_FACTORY_PRICE);
+  const canScheduleAppointment = canAny(user, [
+    PERMISSIONS.CREATE_MEASUREMENT,
+    PERMISSIONS.ASSIGN_INSTALLER,
+    PERMISSIONS.CREATE_REPAIR,
+    PERMISSIONS.VIEW_ALL_JOBS,
+  ]);
+  const canCollectPayment = can(user, PERMISSIONS.COLLECT_PAYMENT);
+  const canApprovePayment = can(user, PERMISSIONS.APPROVE_PAYMENT);
+  const canViewPayments = canAny(user, [
+    PERMISSIONS.COLLECT_PAYMENT,
+    PERMISSIONS.APPROVE_PAYMENT,
+    PERMISSIONS.VIEW_JOB_COSTS,
+  ]);
 
   const defaultValidUntil = defaultQuoteValidUntil(quoteValidityDays);
 
@@ -158,6 +180,15 @@ export default async function JobDetailPage({
                 <MapPin className="size-4 text-muted-foreground" />
                 {job.address ?? job.customerAddress ?? "—"}
               </p>
+              <div className="mt-2">
+                <LocationButtons
+                  phone={job.customerPhone}
+                  address={job.address ?? job.customerAddress}
+                  latitude={job.latitude ?? job.customerLatitude}
+                  longitude={job.longitude ?? job.customerLongitude}
+                  googleMapsUrl={job.customerGoogleMapsUrl}
+                />
+              </div>
             </div>
             <div>
               <p className="text-muted-foreground">تاريخ الإنشاء</p>
@@ -302,6 +333,13 @@ export default async function JobDetailPage({
         canApproveFactoryPrice={canApproveFactoryPrice}
       />
 
+      <AppointmentsSection
+        jobId={job.id}
+        appointments={jobAppointments}
+        assignableUsers={assignableUsers}
+        canScheduleAppointment={canScheduleAppointment}
+      />
+
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -342,6 +380,16 @@ export default async function JobDetailPage({
           )}
         </CardContent>
       </Card>
+
+      {canViewPayments && (
+        <PaymentsSection
+          jobId={job.id}
+          hasSalePrice={job.salePriceTotal !== null}
+          paymentsResult={jobPayments}
+          canCollectPayment={canCollectPayment}
+          canApprovePayment={canApprovePayment}
+        />
+      )}
     </div>
   );
 }

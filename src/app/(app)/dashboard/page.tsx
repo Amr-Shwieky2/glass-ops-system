@@ -1,20 +1,43 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { eq, and, isNull, count, notExists, sql } from "drizzle-orm";
+import { eq, and, isNull, count, notExists, sql, gte, lt, ne, asc } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { jobs, jobStatuses, customers, appointments } from "@/server/db/schema";
 import { getCurrentUser } from "@/server/auth/session";
+import { getTodayRangeUtc } from "@/lib/company-day";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Users, Briefcase, Hourglass, Factory, ArrowLeft } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Users, Briefcase, Hourglass, Factory, ArrowLeft, Ruler, Wrench, CalendarClock } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "لوحة التحكم | نظام إدارة عمليات الزجاج",
 };
 
+const timeFmt = new Intl.DateTimeFormat("ar", {
+  hour: "2-digit",
+  minute: "2-digit",
+  numberingSystem: "latn",
+});
+
+const APPOINTMENT_TYPE_LABEL_AR: Record<string, string> = {
+  measurement: "قياس",
+  installation: "تركيب",
+  repair: "إصلاح",
+  customer_meeting: "لقاء عميل",
+  other: "أخرى",
+};
+
 async function getDashboardStats() {
-  const [[{ value: customerCount }], [{ value: activeJobsCount }], [{ value: awaitingApprovalCount }], readyWithoutInstall] =
-    await Promise.all([
+  const { start: todayStart, end: todayEnd } = getTodayRangeUtc();
+
+  const [
+    [{ value: customerCount }],
+    [{ value: activeJobsCount }],
+    [{ value: awaitingApprovalCount }],
+    readyWithoutInstall,
+    todayAppointmentRows,
+  ] = await Promise.all([
       db
         .select({ value: count() })
         .from(customers)
@@ -60,6 +83,26 @@ async function getDashboardStats() {
             ),
           ),
         ),
+      db
+        .select({
+          id: appointments.id,
+          type: appointments.type,
+          scheduledStart: appointments.scheduledStart,
+          jobId: appointments.jobId,
+          jobNumber: jobs.jobNumber,
+          customerName: customers.name,
+        })
+        .from(appointments)
+        .innerJoin(jobs, eq(appointments.jobId, jobs.id))
+        .innerJoin(customers, eq(jobs.customerId, customers.id))
+        .where(
+          and(
+            gte(appointments.scheduledStart, todayStart),
+            lt(appointments.scheduledStart, todayEnd),
+            ne(appointments.status, "cancelled"),
+          ),
+        )
+        .orderBy(asc(appointments.scheduledStart)),
     ]);
 
   return {
@@ -67,6 +110,10 @@ async function getDashboardStats() {
     activeJobsCount,
     awaitingApprovalCount,
     readyWithoutInstall,
+    measurementsToday: todayAppointmentRows.filter((a) => a.type === "measurement").length,
+    installationsToday: todayAppointmentRows.filter((a) => a.type === "installation").length,
+    repairsToday: todayAppointmentRows.filter((a) => a.type === "repair").length,
+    todayAppointments: todayAppointmentRows,
   };
 }
 
@@ -156,6 +203,93 @@ export default async function DashboardPage() {
                   </div>
                   <Link
                     href={`/jobs/${job.id}`}
+                    className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                  >
+                    عرض المهمة
+                    <ArrowLeft className="size-4" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <div>
+        <h2 className="mb-3 text-lg font-bold text-foreground">اليوم</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Card>
+            <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                قياسات اليوم
+              </CardTitle>
+              <Ruler className="size-5 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold text-foreground">
+                {stats.measurementsToday}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                تركيبات اليوم
+              </CardTitle>
+              <CalendarClock className="size-5 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold text-foreground">
+                {stats.installationsToday}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                إصلاحات اليوم
+              </CardTitle>
+              <Wrench className="size-5 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold text-foreground">
+                {stats.repairsToday}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <CalendarClock className="size-5 text-muted-foreground" />
+            جدول اليوم
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {stats.todayAppointments.length === 0 ? (
+            <EmptyState title="لا توجد مواعيد اليوم" />
+          ) : (
+            <ul className="divide-y">
+              {stats.todayAppointments.map((a) => (
+                <li key={a.id} className="flex items-center justify-between py-3">
+                  <div className="flex items-center gap-3">
+                    <span dir="ltr" className="text-sm font-medium text-foreground">
+                      {timeFmt.format(a.scheduledStart)}
+                    </span>
+                    <Badge variant="outline">
+                      {APPOINTMENT_TYPE_LABEL_AR[a.type] ?? a.type}
+                    </Badge>
+                    <div>
+                      <p className="font-medium text-foreground">{a.jobNumber}</p>
+                      <p className="text-sm text-muted-foreground">{a.customerName}</p>
+                    </div>
+                  </div>
+                  <Link
+                    href={`/jobs/${a.jobId}`}
                     className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
                   >
                     عرض المهمة
