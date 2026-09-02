@@ -107,7 +107,19 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/reports",
     label: "التقارير",
     icon: BarChart3,
-    permission: [PERMISSIONS.VIEW_PROFITABILITY, PERMISSIONS.VIEW_JOB_COSTS],
+    // Must be `canAny` of every permission that unlocks at least one tab on
+    // /reports (src/app/(app)/reports/page.tsx's hasReportAccess) — not a
+    // narrower financial-only gate. Otherwise a user who can only open,
+    // say, the vehicles-fuel or jobs tab (e.g. ADD_FUEL / VIEW_ALL_JOBS
+    // without VIEW_PROFITABILITY) would have a working, permitted /reports
+    // page hidden from their own nav.
+    permission: [
+      PERMISSIONS.VIEW_ALL_JOBS,
+      PERMISSIONS.VIEW_TECHNICIAN_BALANCES,
+      PERMISSIONS.MANAGE_VEHICLES,
+      PERMISSIONS.ADD_FUEL,
+      PERMISSIONS.VIEW_PROFITABILITY,
+    ],
   },
   {
     href: "/admin/users",

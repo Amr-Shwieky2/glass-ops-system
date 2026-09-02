@@ -926,6 +926,41 @@ async function main() {
   });
 
   // ---------------------------------------------------------------------
+  // Job 8: ياسمين نمر — in production, with a factory price already
+  // submitted and still sitting at status='submitted' (Phase 10b). None of
+  // Jobs 1/4/6's production_requests are ever left in this state — all
+  // three go straight to 'approved' above — so without this job the
+  // dashboard's "أسعار مصنع بانتظار الاعتماد" Needs Attention item and its
+  // Reports-screen equivalent would show empty on a fresh seed. Measured
+  // by Issam (not Basel), so a restricted (VIEW_ASSIGNED_JOBS-only) viewer
+  // scoping check has a real case either way: Issam is involved (measured
+  // it) and sees this item, Basel is not involved and does not.
+  // ---------------------------------------------------------------------
+  console.log("Seeding Job 8: Yasmin (factory price submitted, awaiting approval)...");
+  const [yasmin] = await db.insert(schema.customers).values({
+    name: "ياسمين نمر", phone: "+972505558008", address: "شارع الجبل 9، عكا", createdByUserId: mohammad.id,
+  }).returning();
+  const [yasminJob] = await db.insert(schema.jobs).values({
+    jobNumber: "JOB-2026-0008", customerId: yasmin.id, statusId: statusByKey.in_production.id,
+    title: "Kitchen glass + fixed panel", measuredByUserId: issam.id, pricingResponsibleUserId: mohammad.id,
+    dealClosedByUserId: mohammad.id, salePriceTotal: "4200.00", createdByUserId: mohammad.id, createdAt: daysAgo(4),
+  }).returning();
+  const [yasminProdRequest] = await db.insert(schema.productionRequests).values({
+    jobId: yasminJob.id, requestedByUserId: mohammad.id,
+    details: "Kitchen glass splashback + fixed side panel, standard clear tempered.",
+    status: "submitted", estimatedReadyDate: dateOnly(daysFromNow(3)), createdAt: daysAgo(2),
+  }).returning();
+  const [yasminSubmission] = await db.insert(schema.factorySubmissions).values({
+    productionRequestId: yasminProdRequest.id, submittedPrice: "1500.00",
+    notes: "Standard tempered glass, 8mm.", submittedAt: daysAgo(0),
+  }).returning();
+  await db.insert(schema.approvalRequests).values({
+    entityType: "factory_submission", entityId: yasminSubmission.id, requestedByUserId: mohammad.id,
+    summary: `عرض سعر من المصنع للمهمة ${yasminJob.jobNumber} بمبلغ 1,500.00 ₪`,
+    relatedJobId: yasminJob.id,
+  });
+
+  // ---------------------------------------------------------------------
   // Phase 10a demo data: notifications. Every phase's Server Actions call
   // notifyUser()/notifyUsers() as a side effect of a real action (schedule
   // an appointment, submit a factory price, report a payment...), but this
@@ -994,7 +1029,7 @@ async function main() {
 
   console.log("Seeding number sequences (continuing on from the demo jobs/quotes above, which use hardcoded numbers rather than nextDocumentNumber())...");
   await db.insert(schema.numberSequences).values([
-    { scope: "job", year: 2026, lastValue: 7 }, // JOB-2026-0001..0007 used above
+    { scope: "job", year: 2026, lastValue: 8 }, // JOB-2026-0001..0008 used above
     { scope: "quote", year: 2026, lastValue: 5 }, // Q-2026-0001..0005 used above
   ]);
 
