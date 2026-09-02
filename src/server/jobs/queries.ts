@@ -131,10 +131,18 @@ export async function getJobDetail(jobId: string) {
       dealClosedByUserId: jobs.dealClosedByUserId,
       quoteId: jobs.quoteId,
       sourceQuoteVersionId: jobs.sourceQuoteVersionId,
+      // Job's own coordinates override the customer's — same convention as
+      // jobs.address itself (see the comment in schema/jobs.ts). Resolving
+      // the override is left to the caller/UI (Call/Waze/Maps buttons).
+      latitude: jobs.latitude,
+      longitude: jobs.longitude,
       customerId: customers.id,
       customerName: customers.name,
       customerPhone: customers.phone,
       customerAddress: customers.address,
+      customerLatitude: customers.latitude,
+      customerLongitude: customers.longitude,
+      customerGoogleMapsUrl: customers.googleMapsUrl,
       statusId: jobStatuses.id,
       statusKey: jobStatuses.key,
       statusLabelAr: jobStatuses.labelAr,

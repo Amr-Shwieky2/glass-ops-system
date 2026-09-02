@@ -1,0 +1,251 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import { eq } from "drizzle-orm";
+import { db } from "@/server/db/client";
+import { appointments, appointmentAssignees, jobs, jobStatuses } from "@/server/db/schema";
+import { getCurrentUser } from "@/server/auth/session";
+import { can, canAny } from "@/server/auth/permissions";
+import { PERMISSIONS, type PermissionKey } from "@/server/auth/permission-keys";
+import { recordAudit } from "@/server/audit";
+import { notifyUsers } from "@/server/notifications";
+import { advanceJobStatus } from "@/server/jobs/status";
+import { getAssigneeConflicts } from "@/server/appointments/queries";
+
+export interface ActionState {
+  error?: string;
+  success?: boolean;
+}
+
+function emptyToUndefined(value: FormDataEntryValue | null): string | undefined {
+  const s = typeof value === "string" ? value.trim() : "";
+  return s.length > 0 ? s : undefined;
+}
+
+// ---------------------------------------------------------------------
+// Schedule an appointment (section 40/41). The permission required, and
+// whether it nudges the job's status forward, both depend on the
+// appointment `type` — measurement/installation/repair each drive their
+// own workflow stage; a customer_meeting/other appointment is just a
+// calendar entry and only needs general job visibility.
+// ---------------------------------------------------------------------
+const APPOINTMENT_TYPE_PERMISSION: Record<string, PermissionKey> = {
+  measurement: PERMISSIONS.CREATE_MEASUREMENT,
+  installation: PERMISSIONS.ASSIGN_INSTALLER,
+  repair: PERMISSIONS.CREATE_REPAIR,
+  customer_meeting: PERMISSIONS.VIEW_ALL_JOBS,
+  other: PERMISSIONS.VIEW_ALL_JOBS,
+};
+
+const APPOINTMENT_TYPE_TARGET_STATUS: Record<string, string | undefined> = {
+  measurement: "measurement_scheduled",
+  installation: "installation_scheduled",
+  repair: "repair_scheduled",
+};
+
+const APPOINTMENT_TYPE_LABEL_AR: Record<string, string> = {
+  measurement: "قياس",
+  installation: "تركيب",
+  repair: "إصلاح",
+  customer_meeting: "اجتماع مع العميل",
+  other: "موعد",
+};
+
+const ScheduleAppointmentSchema = z.object({
+  type: z.enum([
+    "measurement",
+    "installation",
+    "repair",
+    "customer_meeting",
+    "other",
+  ]),
+  scheduledStart: z.string().min(1, { error: "تاريخ ووقت البدء مطلوبان" }),
+  scheduledEnd: z.string().trim().optional(),
+  assigneeUserIds: z
+    .array(z.string().uuid())
+    .min(1, { error: "اختر مسؤولاً واحداً على الأقل" }),
+  location: z.string().trim().optional(),
+  notes: z.string().trim().optional(),
+});
+
+export interface ScheduleAppointmentState extends ActionState {
+  /** Non-blocking: set when one or more assignees already have another
+   * scheduled appointment overlapping this time — the appointment is
+   * still created, this is a heads-up toast, not a rejection. */
+  warning?: string;
+}
+
+export async function scheduleAppointmentAction(
+  jobId: string,
+  _prevState: ScheduleAppointmentState,
+  formData: FormData,
+): Promise<ScheduleAppointmentState> {
+  const user = await getCurrentUser();
+  if (!user) return { error: "يجب تسجيل الدخول." };
+
+  const parsed = ScheduleAppointmentSchema.safeParse({
+    type: formData.get("type"),
+    scheduledStart: formData.get("scheduledStart"),
+    scheduledEnd: emptyToUndefined(formData.get("scheduledEnd")),
+    assigneeUserIds: formData.getAll("assigneeUserIds"),
+    location: emptyToUndefined(formData.get("location")),
+    notes: emptyToUndefined(formData.get("notes")),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" };
+  }
+  const data = parsed.data;
+
+  const requiredPermission = APPOINTMENT_TYPE_PERMISSION[data.type];
+  if (!can(user, requiredPermission)) {
+    return { error: "لا تملك صلاحية جدولة هذا النوع من المواعيد." };
+  }
+
+  const scheduledStart = new Date(data.scheduledStart);
+  if (Number.isNaN(scheduledStart.getTime())) {
+    return { error: "تاريخ ووقت البدء غير صحيحين" };
+  }
+  let scheduledEnd: Date | null = null;
+  if (data.scheduledEnd) {
+    scheduledEnd = new Date(data.scheduledEnd);
+    if (Number.isNaN(scheduledEnd.getTime())) {
+      return { error: "تاريخ ووقت الانتهاء غير صحيحين" };
+    }
+    if (scheduledEnd <= scheduledStart) {
+      return { error: "يجب أن يكون وقت الانتهاء بعد وقت البدء" };
+    }
+  }
+
+  const [job] = await db
+    .select({
+      id: jobs.id,
+      jobNumber: jobs.jobNumber,
+      isTerminal: jobStatuses.isTerminal,
+    })
+    .from(jobs)
+    .innerJoin(jobStatuses, eq(jobs.statusId, jobStatuses.id))
+    .where(eq(jobs.id, jobId))
+    .limit(1);
+  if (!job) return { error: "المهمة غير موجودة" };
+  if (job.isTerminal) return { error: "لا يمكن جدولة موعد لمهمة مغلقة." };
+
+  // Non-blocking conflict check — done before the write so the warning can
+  // be returned alongside success, never as a reason to refuse the write.
+  const conflictNames = await getAssigneeConflicts({
+    userIds: data.assigneeUserIds,
+    scheduledStart,
+    scheduledEnd,
+  });
+
+  await db.transaction(async (tx) => {
+    const [appointment] = await tx
+      .insert(appointments)
+      .values({
+        jobId,
+        type: data.type,
+        scheduledStart,
+        scheduledEnd,
+        location: data.location,
+        notes: data.notes,
+        createdByUserId: user.id,
+      })
+      .returning();
+
+    await tx.insert(appointmentAssignees).values(
+      data.assigneeUserIds.map((userId) => ({
+        appointmentId: appointment.id,
+        userId,
+      })),
+    );
+
+    const targetStatus = APPOINTMENT_TYPE_TARGET_STATUS[data.type];
+    if (targetStatus) {
+      await advanceJobStatus(tx, jobId, targetStatus);
+    }
+
+    await recordAudit(
+      {
+        userId: user.id,
+        action: "appointment.schedule",
+        entityType: "job",
+        entityId: jobId,
+        newValue: {
+          appointmentId: appointment.id,
+          type: data.type,
+          scheduledStart,
+          scheduledEnd,
+          assigneeUserIds: data.assigneeUserIds,
+        },
+      },
+      tx,
+    );
+  });
+
+  const typeLabel = APPOINTMENT_TYPE_LABEL_AR[data.type];
+  await notifyUsers(data.assigneeUserIds, {
+    type: "appointment_scheduled",
+    title: `تم جدولة موعد ${typeLabel} لمهمة ${job.jobNumber}`,
+    relatedEntityType: "job",
+    relatedEntityId: jobId,
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/calendar");
+  revalidatePath("/my-day");
+  revalidatePath("/dashboard");
+
+  const warning =
+    conflictNames.length > 0
+      ? `تعارض في الموعد لدى: ${conflictNames.join("، ")}`
+      : undefined;
+
+  return { success: true, warning };
+}
+
+// ---------------------------------------------------------------------
+// Cancel an appointment — a removal, not a creation, so (mirroring
+// removeAssignment in src/server/jobs/actions.ts) it is gated leniently:
+// anyone who could have scheduled some kind of appointment can cancel one,
+// rather than re-deriving the exact type-specific permission again.
+// ---------------------------------------------------------------------
+export async function cancelAppointmentAction(
+  jobId: string,
+  appointmentId: string,
+): Promise<ActionState> {
+  const user = await getCurrentUser();
+  if (
+    !canAny(user, [
+      PERMISSIONS.CREATE_MEASUREMENT,
+      PERMISSIONS.ASSIGN_INSTALLER,
+      PERMISSIONS.CREATE_REPAIR,
+      PERMISSIONS.VIEW_ALL_JOBS,
+    ])
+  ) {
+    return { error: "لا تملك صلاحية إلغاء المواعيد." };
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(appointments)
+      .set({ status: "cancelled", updatedAt: new Date() })
+      .where(eq(appointments.id, appointmentId));
+
+    await recordAudit(
+      {
+        userId: user!.id,
+        action: "appointment.cancel",
+        entityType: "job",
+        entityId: jobId,
+        newValue: { appointmentId },
+      },
+      tx,
+    );
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/calendar");
+  revalidatePath("/my-day");
+  revalidatePath("/dashboard");
+  return { success: true };
+}
