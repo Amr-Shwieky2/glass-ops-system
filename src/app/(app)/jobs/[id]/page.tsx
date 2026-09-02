@@ -164,6 +164,17 @@ export default async function JobDetailPage({
     PERMISSIONS.VIEW_TECHNICIAN_BALANCES,
     PERMISSIONS.VIEW_PROFITABILITY,
   ]);
+  // Distinct from canViewCompensation above (which only gates whether the
+  // section renders at all): a technician's individual ledger entries
+  // (name, penalty/bonus reasons, per-entry amounts) are the same kind of
+  // technician-identifying data /finance/technicians correctly requires
+  // VIEW_TECHNICIAN_BALANCES for — VIEW_PROFITABILITY alone (aggregate
+  // revenue/cost/margin visibility, not per-technician identity) must not
+  // be sufficient to see them here either.
+  const canViewTechnicianLedger = canAny(user, [
+    PERMISSIONS.MANAGE_TECHNICIAN_PAYMENTS,
+    PERMISSIONS.VIEW_TECHNICIAN_BALANCES,
+  ]);
   const canManageTechnicianPayments = can(user, PERMISSIONS.MANAGE_TECHNICIAN_PAYMENTS);
 
   const defaultValidUntil = defaultQuoteValidUntil(quoteValidityDays);
@@ -452,6 +463,7 @@ export default async function JobDetailPage({
           penaltyRules={penaltyRules}
           jobItems={job.items}
           canManageTechnicianPayments={canManageTechnicianPayments}
+          canViewTechnicianLedger={canViewTechnicianLedger}
         />
       )}
     </div>

@@ -89,6 +89,7 @@ export const commissions = pgTable("commissions", {
   id: uuid("id").primaryKey().defaultRandom(),
   jobId: uuid("job_id")
     .notNull()
+    .unique()
     .references(() => jobs.id, { onDelete: "cascade" }),
   closedByUserId: uuid("closed_by_user_id")
     .notNull()

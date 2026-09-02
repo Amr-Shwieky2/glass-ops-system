@@ -1,0 +1,1 @@
+ALTER TABLE "commissions" ADD CONSTRAINT "commissions_job_id_unique" UNIQUE("job_id");

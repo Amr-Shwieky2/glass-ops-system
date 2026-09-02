@@ -67,6 +67,7 @@ export function CompensationSection({
   penaltyRules,
   jobItems,
   canManageTechnicianPayments,
+  canViewTechnicianLedger,
 }: {
   jobId: string;
   entries: LedgerEntry[];
@@ -78,6 +79,17 @@ export function CompensationSection({
   penaltyRules: PenaltyRuleOption[];
   jobItems: { id: string; description: string | null; workTypeLabelAr: string | null }[];
   canManageTechnicianPayments: boolean;
+  /**
+   * Gates the per-technician ledger entry list below (names, penalty/bonus
+   * reasons, per-entry amounts) — requires VIEW_TECHNICIAN_BALANCES (or
+   * MANAGE_TECHNICIAN_PAYMENTS), the same permission /finance/technicians
+   * requires for this exact kind of data. Deliberately narrower than
+   * whatever gate got this component rendered at all (VIEW_PROFITABILITY
+   * alone is enough for that, to still show the commission summary card
+   * below — aggregate financial data, not per-technician identity — but
+   * must NOT be enough on its own to reveal the entry list.
+   */
+  canViewTechnicianLedger: boolean;
 }) {
   return (
     <Card>
@@ -153,41 +165,42 @@ export function CompensationSection({
           </div>
         </div>
 
-        {entries.length === 0 ? (
-          <EmptyState title="لا توجد قيود تعويض على هذه المهمة" className="border-0 p-6" />
-        ) : (
-          <ul className="divide-y">
-            {entries.map((e) => (
-              <li key={e.id} className="py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-foreground">
-                        {technicianNameByEntryId[e.id] ?? "فني غير معروف"}
-                      </span>
-                      <span className="text-sm text-muted-foreground">
-                        {ENTRY_TYPE_LABEL_AR[e.entryType] ?? e.entryType}
-                      </span>
-                      <Badge variant={APPROVAL_STATUS_VARIANT[e.approvalStatus] ?? "outline"}>
-                        {APPROVAL_STATUS_LABEL_AR[e.approvalStatus] ?? e.approvalStatus}
-                      </Badge>
+        {canViewTechnicianLedger &&
+          (entries.length === 0 ? (
+            <EmptyState title="لا توجد قيود تعويض على هذه المهمة" className="border-0 p-6" />
+          ) : (
+            <ul className="divide-y">
+              {entries.map((e) => (
+                <li key={e.id} className="py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-foreground">
+                          {technicianNameByEntryId[e.id] ?? "فني غير معروف"}
+                        </span>
+                        <span className="text-sm text-muted-foreground">
+                          {ENTRY_TYPE_LABEL_AR[e.entryType] ?? e.entryType}
+                        </span>
+                        <Badge variant={APPROVAL_STATUS_VARIANT[e.approvalStatus] ?? "outline"}>
+                          {APPROVAL_STATUS_LABEL_AR[e.approvalStatus] ?? e.approvalStatus}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {e.createdByUserName ? `بواسطة ${e.createdByUserName} · ` : ""}
+                        {dateFmt.format(e.createdAt)}
+                      </p>
+                      {e.description && (
+                        <p className="text-sm text-muted-foreground">{e.description}</p>
+                      )}
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      {e.createdByUserName ? `بواسطة ${e.createdByUserName} · ` : ""}
-                      {dateFmt.format(e.createdAt)}
-                    </p>
-                    {e.description && (
-                      <p className="text-sm text-muted-foreground">{e.description}</p>
-                    )}
+                    <span dir="ltr" className="font-medium text-foreground">
+                      {formatILS(e.amount)}
+                    </span>
                   </div>
-                  <span dir="ltr" className="font-medium text-foreground">
-                    {formatILS(e.amount)}
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+                </li>
+              ))}
+            </ul>
+          ))}
       </CardContent>
     </Card>
   );
