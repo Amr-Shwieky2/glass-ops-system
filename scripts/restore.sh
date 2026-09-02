@@ -18,6 +18,16 @@
 set -euo pipefail
 
 COMPOSE_SERVICE="${COMPOSE_POSTGRES_SERVICE:-postgres}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# The Compose stack's credentials live in .env.docker, not .env — this
+# project's local dev server also reads a root-level .env, which is
+# Compose's own default env-file lookup too, so this script always passes
+# --env-file explicitly rather than risk picking up the wrong one (or an
+# empty POSTGRES_USER/PASSWORD/DB, which docker compose only warns about,
+# not errors on). See docker-compose.yml and .env.docker.example.
+COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-$REPO_ROOT/.env.docker}"
+COMPOSE=(docker compose --env-file "$COMPOSE_ENV_FILE")
 
 usage() {
   echo "Usage: $0 <path-to-backup-file>" >&2
@@ -37,9 +47,15 @@ if [ ! -f "$BACKUP_FILE" ]; then
   exit 1
 fi
 
-if [ -z "$(docker compose ps -q "$COMPOSE_SERVICE" 2>/dev/null)" ]; then
+if [ ! -f "$COMPOSE_ENV_FILE" ]; then
+  echo "error: env file not found: $COMPOSE_ENV_FILE" >&2
+  echo "       create it first: cp .env.docker.example .env.docker (then edit it)" >&2
+  exit 1
+fi
+
+if [ -z "$("${COMPOSE[@]}" ps -q "$COMPOSE_SERVICE" 2>/dev/null)" ]; then
   echo "error: the '$COMPOSE_SERVICE' Compose service isn't running." >&2
-  echo "       start the stack first: docker compose up -d" >&2
+  echo "       start the stack first: docker compose --env-file .env.docker up -d" >&2
   exit 1
 fi
 
@@ -66,7 +82,7 @@ echo "==> Restoring..."
 # whatever created the dump. $POSTGRES_USER / $POSTGRES_DB are expanded
 # inside the postgres container, from the same env vars the official
 # postgres image already uses to initialize itself.
-if docker compose exec -T "$COMPOSE_SERVICE" \
+if "${COMPOSE[@]}" exec -T "$COMPOSE_SERVICE" \
   sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner' \
   < "$BACKUP_FILE"
 then

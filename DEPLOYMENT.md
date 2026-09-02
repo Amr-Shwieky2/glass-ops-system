@@ -32,117 +32,156 @@ nothing here depends on a third-party service.
 2. **Copy the environment file and fill in Compose-specific values:**
 
    ```bash
-   cp .env.example .env
+   cp .env.docker.example .env.docker
    ```
 
-   Open `.env` and set the Postgres credentials the Compose stack will use
-   (the database user, password, and database name) along with any other
-   Compose-specific variables the file calls out. These credentials are
-   local to this Docker Compose stack — they are unrelated to any
-   credentials used for local (non-Docker) development.
+   Open `.env.docker` and set real values for `POSTGRES_USER`,
+   `POSTGRES_PASSWORD`, and `POSTGRES_DB` — the credentials the Compose
+   Postgres container initializes itself with. The app container's own
+   `DATABASE_URL` is assembled automatically from these three by
+   `docker-compose.yml`; nothing else needs to be set by hand.
 
-   > **Cross-check needed:** the exact variable names expected here
-   > (e.g. `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`, and how
-   > the app's own `DATABASE_URL` is assembled from them) depend on the
-   > final `docker-compose.yml` / `Dockerfile`. Match whatever `.env.example`
-   > actually documents once that file is in place.
+   This is deliberately a separate file from `.env` (used by local,
+   non-Docker development — see `.env.example`), and every command below
+   passes it explicitly with `--env-file .env.docker`. Both this project's
+   dev server and `docker compose` itself default to reading a plain
+   `.env` in the repository root, so if the Compose stack used that same
+   default, running these steps in a checkout that already has a working
+   dev `.env` would either overwrite it or silently mix the two
+   environments' values. Using a distinctly named file passed explicitly
+   avoids that entirely — these credentials are otherwise completely
+   unrelated to local development.
 
 3. **Build the images:**
 
    ```bash
-   docker compose build
+   docker compose --env-file .env.docker build
    ```
 
 4. **Start the stack in the background:**
 
    ```bash
-   docker compose up -d
+   docker compose --env-file .env.docker up -d
    ```
 
    This starts Postgres (in a named volume, so data survives container
-   restarts and rebuilds), the application, and the worker container that
-   runs scheduled notification sweeps. Postgres is not exposed to the host
-   — the application reaches it only over the Compose-internal network, by
-   service name. This is intentional: there's no reason for the database
-   port to be reachable from outside the stack in a normal deployment.
+   restarts and rebuilds) and the application. Postgres is not exposed to
+   the host — the application reaches it only over the Compose-internal
+   network, by service name. This is intentional: there's no reason for
+   the database port to be reachable from outside the stack in a normal
+   deployment.
 
-5. **Run database migrations**, if this isn't already handled
-   automatically on container start:
+   There is no separate worker container for scheduled notification
+   sweeps yet — `docker-compose.yml` only defines `postgres` and `app`.
+   Nothing in the current codebase implements a scheduled sweep to run, so
+   this remains a documented gap for a future phase rather than a service
+   that would start and do nothing.
+
+5. **Migrations run automatically.** The `app` container's entrypoint runs
+   `drizzle-kit migrate` against the database before starting the Next.js
+   server, every time the container starts — including on first setup, so
+   there is no separate migration command to run here. This is idempotent
+   (drizzle-kit tracks which migrations already applied), so it's also
+   what makes updates (below) not need a manual migration step.
+
+   To confirm it happened, or to watch it run: `docker compose --env-file
+   .env.docker logs app` should show `Running database migrations...`
+   followed by `[✓] migrations applied successfully!` before the `Next.js
+   16...` server-start lines.
+
+   If a migration ever needs to be re-run by hand without restarting the
+   container: `npm run db:migrate` does **not** work here — the runtime
+   image is intentionally minimal and doesn't have `drizzle-kit` in its
+   main `node_modules` (see the Dockerfile). The equivalent that does work
+   uses the isolated migration install the image sets up for exactly this:
 
    ```bash
-   docker compose exec app npm run db:migrate
+   docker compose --env-file .env.docker exec app \
+     sh -c 'cd /app/migrate && node node_modules/drizzle-kit/bin.cjs migrate'
    ```
-
-   > **Cross-check needed:** confirm whether migrations run automatically
-   > when the `app` container starts (an entrypoint step) or need this
-   > manual command. If they run automatically, this step can be skipped
-   > on first setup — but running it by hand is harmless either way,
-   > since migrations are idempotent (see "Updating," below).
 
 6. **Seed demo data** — optional, and only useful for a fresh
    evaluation/staging instance, not a real production database with real
-   customer data:
+   customer data. `npm run db:seed` also does not work directly inside the
+   `app` container for the same reason as above: the runtime image doesn't
+   carry `tsx` or the TypeScript source needed to run
+   `src/server/db/seed.ts`. Seeding instead needs an image built from the
+   Dockerfile's `builder` stage (which has the full source and
+   dev-dependencies) run once, on the same Compose network, against the
+   same database:
 
    ```bash
-   docker compose exec app npm run db:seed
+   docker build --target builder -t glass-ops-seed .
+   docker run --rm --network "$(basename "$(pwd)")_default" \
+     --env-file .env.docker \
+     -e DATABASE_URL="postgres://$(grep -oP '(?<=POSTGRES_USER=).*' .env.docker):$(grep -oP '(?<=POSTGRES_PASSWORD=).*' .env.docker)@postgres:5432/$(grep -oP '(?<=POSTGRES_DB=).*' .env.docker)" \
+     glass-ops-seed npm run db:seed
+   docker rmi glass-ops-seed
    ```
 
-   This is a deliberate, manual, one-time step. It is never run
-   automatically, because it truncates and reseeds tables — running it
+   (The network name follows Compose's default naming — the directory name
+   the stack was brought up from, plus `_default`; confirm it with `docker
+   network ls` if the stack was started from a differently named
+   directory.) This is a deliberate, manual, one-time step. It is never
+   run automatically, because it truncates and reseeds tables — running it
    against a database that already holds real business data would destroy
    that data.
 
 7. **Open the application** in a browser at the host machine's address on
-   the mapped port, e.g. `http://localhost:<PORT>` if running on the same
-   machine you're browsing from, or `http://<host-ip>:<PORT>` from another
-   device on the same network.
-
-   > **Cross-check needed:** the actual host port the `app` service is
-   > mapped to (the left-hand side of its `ports:` entry in
-   > `docker-compose.yml`). Substitute the real value here once known.
+   the mapped port: `http://localhost:3001` if running on the same machine
+   you're browsing from, or `http://<host-ip>:3001` from another device on
+   the same network. (The app container listens on port 3000 internally;
+   `docker-compose.yml` maps it to host port `3001` rather than `3000`
+   because a native, non-Docker dev server commonly already owns `3000` on
+   a machine also used for development. Change the left-hand side of the
+   `app` service's `ports:` entry if `3001` isn't free on your host.)
 
 ### Viewing logs
 
 ```bash
-docker compose logs -f            # all services
-docker compose logs -f app        # just the application
-docker compose logs -f postgres   # just the database
+docker compose --env-file .env.docker logs -f            # all services
+docker compose --env-file .env.docker logs -f app        # just the application
+docker compose --env-file .env.docker logs -f postgres   # just the database
 ```
 
 ### Stopping and restarting
 
 ```bash
-docker compose stop               # stop containers, keep them (and the data volume) around
-docker compose start              # start them again
-docker compose down               # stop and remove containers (data volume is preserved)
-docker compose up -d              # recreate and start
+docker compose --env-file .env.docker stop               # stop containers, keep them (and the data volume) around
+docker compose --env-file .env.docker start               # start them again
+docker compose --env-file .env.docker down                 # stop and remove containers (data volume is preserved)
+docker compose --env-file .env.docker up -d                 # recreate and start
 ```
 
-`docker compose down -v` additionally deletes the named Postgres volume —
-i.e., all data. Don't run this unless that's actually the intent (e.g.
-tearing down a disposable test instance). It is not part of the normal
-stop/restart/update flow.
+`docker compose --env-file .env.docker down -v` additionally deletes the
+named Postgres volume — i.e., all data. Don't run this unless that's
+actually the intent (e.g. tearing down a disposable test instance). It is
+not part of the normal stop/restart/update flow.
 
 ### Updating to a new version
 
 ```bash
 git pull
-docker compose build
-docker compose up -d
+docker compose --env-file .env.docker build
+docker compose --env-file .env.docker up -d
 ```
 
 This rebuilds the application image from the updated source and recreates
 the container. Any new database migrations run automatically and are
 idempotent — safe to run again even if some of them already applied — so
-there is no separate "migration step" to remember on update, beyond
-whatever this repository's own startup behavior already does. The Postgres
+there is no separate "migration step" to remember on update. The Postgres
 data volume is untouched by an update; only the application code changes.
 
 ## 2. Backup and restore
 
 Two scripts handle this, both driving the Compose Postgres service
 directly — neither touches any non-Docker Postgres install that might also
-exist on the host.
+exist on the host. Both scripts look for `.env.docker` in the repository
+root by default (the same file created in step 2 above; override with the
+`COMPOSE_ENV_FILE` environment variable if it lives elsewhere) rather than
+Docker Compose's own default `.env` lookup, for the same reason the
+`docker compose` commands above always pass `--env-file .env.docker`
+explicitly — see step 2.
 
 ### Backing up
 
@@ -153,12 +192,12 @@ exist on the host.
 This runs `pg_dump` inside the running `postgres` Compose service and
 writes a timestamped, compressed custom-format dump
 (`backups/glass_ops_<timestamp>.dump`) on the host. The stack must be
-running (`docker compose up -d`) first. The `backups/` directory is
-git-ignored — these files are runtime artifacts, not something to commit —
-so treat them as you would any other sensitive data export: store copies
-somewhere durable and access-controlled (a separate disk, an encrypted
-external drive, a backup service the business already trusts), not only on
-the machine that made them.
+running (`docker compose --env-file .env.docker up -d`) first. The
+`backups/` directory is git-ignored — these files are runtime artifacts,
+not something to commit — so treat them as you would any other sensitive
+data export: store copies somewhere durable and access-controlled (a
+separate disk, an encrypted external drive, a backup service the business
+already trusts), not only on the machine that made them.
 
 ### Restoring
 

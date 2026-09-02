@@ -1,9 +1,14 @@
 # Self-hosted stack (ARCHITECTURE.md section 9): Postgres + the Next.js app,
 # on a machine the company controls. No account, no card, no usage cap.
 #
-# Credentials come from a local .env file next to this one (not committed —
-# see .gitignore's `.env*` rule) via Compose's own ${VAR} interpolation.
-# Required variables: POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB.
+# Credentials come from a `.env.docker` file next to this one (not
+# committed — see .gitignore's `.env*` rule; template: .env.docker.example)
+# via Compose's own ${VAR} interpolation. Required variables: POSTGRES_USER,
+# POSTGRES_PASSWORD, POSTGRES_DB. Deliberately NOT named `.env` — this
+# project's local dev server also reads a root-level `.env`, which is
+# Compose's own default lookup name too; every `docker compose` command
+# against this file must pass `--env-file .env.docker` explicitly so the
+# two never collide (see DEPLOYMENT.md section 1 and .env.docker.example).
 #
 # This stack is entirely separate from this machine's native (non-Docker)
 # Postgres used for local dev — different container, different named
