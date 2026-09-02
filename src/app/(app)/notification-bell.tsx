@@ -14,8 +14,8 @@ import {
 import {
   markNotificationReadAction,
   markAllNotificationsReadAction,
-  type Notification,
-} from "@/server/notifications";
+} from "@/server/notifications-actions";
+import type { Notification } from "@/server/notifications";
 
 const relativeFmt = new Intl.RelativeTimeFormat("ar", { numeric: "auto" });
 

@@ -925,6 +925,73 @@ async function main() {
     cashAccountId: mohammadCash.id, direction: "in", amount: "3000.00", sourceType: "customer_payment", sourceId: karimPayment.id, createdByUserId: mohammad.id, createdAt: daysAgo(2),
   });
 
+  // ---------------------------------------------------------------------
+  // Phase 10a demo data: notifications. Every phase's Server Actions call
+  // notifyUser()/notifyUsers() as a side effect of a real action (schedule
+  // an appointment, submit a factory price, report a payment...), but this
+  // seed script inserts rows directly and never goes through that action
+  // layer (same as it never calls recordAudit() — the audit log is
+  // legitimately empty after a fresh seed, see below). So without a few
+  // rows added here directly, the inbox/bell built in this phase would
+  // have nothing to show. These mirror real notifyUser/notifyUsers call
+  // sites (same type/title conventions) for scenarios already seeded
+  // above, across four different users with a mix of read/unread.
+  // ---------------------------------------------------------------------
+  console.log("Seeding Phase 10a demo notifications (bell/inbox)...");
+  await db.insert(schema.notifications).values([
+    // Mohammad: two still-unread pending-approval notices, matching the
+    // pending customer_payment and technician_ledger_entry rows seeded
+    // above (mirrors payments/actions.ts's and compensation/actions.ts's
+    // notifyUsers(approverIds, ...) calls).
+    {
+      userId: mohammad.id, type: "customer_payment_pending_approval",
+      title: "دفعة عميل بانتظار الاعتماد",
+      body: "بلّغ عصام عن دفعة نقدية من نبيل عودة بمبلغ 1,000.00 ₪.",
+      relatedEntityType: "job", relatedEntityId: nabilJob.id,
+      isRead: false, createdAt: daysAgo(0),
+    },
+    {
+      userId: mohammad.id, type: "technician_payment_pending_approval",
+      title: "دفعة فني بانتظار الاعتماد",
+      body: "أبلغ باسل عن استلام دفعة نقدية بمبلغ 200.00 ₪ من الشركة.",
+      isRead: false, createdAt: daysAgo(0),
+    },
+    // Amr: the same job-cost pending notice Mohammad's own submission
+    // would trigger for every other approver, already read (mirrors
+    // costs/actions.ts's notifyUsers(approverIds, ...)).
+    {
+      userId: amr.id, type: "job_cost_pending_approval",
+      title: "تكلفة مهمة بانتظار الاعتماد",
+      body: "أضاف محمد تكلفة مواد وتجهيزات بمبلغ 350.00 ₪ على مهمة نبيل عودة.",
+      relatedEntityType: "job", relatedEntityId: nabilJob.id,
+      isRead: true, readAt: daysAgo(0), createdAt: daysAgo(0),
+    },
+    // Basel: unread notice for today's installation appointment he's
+    // assigned to (mirrors appointments/actions.ts's scheduleAppointmentAction).
+    {
+      userId: basel.id, type: "appointment_scheduled",
+      title: "تم جدولة موعد تركيب لمهمة JOB-2026-0004",
+      relatedEntityType: "job", relatedEntityId: reemJob.id,
+      isRead: false, createdAt: daysAgo(0),
+    },
+    // Basel: older, already-read notice for being assigned as installer on
+    // Karim's job (mirrors jobs/actions.ts's assignTechnicianAction).
+    {
+      userId: basel.id, type: "job_assigned",
+      title: "تم تعيينك على مهمة جديدة",
+      relatedEntityType: "job", relatedEntityId: karimJob.id,
+      isRead: true, readAt: daysAgo(11), createdAt: daysAgo(12),
+    },
+    // Issam: unread notice for the open repair he's responsible for on
+    // Nabil's job (mirrors repairs/actions.ts's createRepairAction).
+    {
+      userId: issam.id, type: "repair_assigned",
+      title: "تم تعيينك مسؤولاً عن إصلاح",
+      relatedEntityType: "job", relatedEntityId: nabilJob.id,
+      isRead: false, createdAt: daysAgo(0),
+    },
+  ]);
+
   console.log("Seeding number sequences (continuing on from the demo jobs/quotes above, which use hardcoded numbers rather than nextDocumentNumber())...");
   await db.insert(schema.numberSequences).values([
     { scope: "job", year: 2026, lastValue: 7 }, // JOB-2026-0001..0007 used above

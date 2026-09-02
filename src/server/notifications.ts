@@ -3,7 +3,6 @@ import { and, count, desc, eq } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { notifications } from "@/server/db/schema";
 import type { Database } from "@/server/db/client";
-import { getCurrentUser } from "@/server/auth/session";
 
 export interface ActionState {
   error?: string;
@@ -92,45 +91,17 @@ export async function getUnreadNotificationCount(userId: string): Promise<number
   return row?.value ?? 0;
 }
 
-/**
- * Marks one notification read. Not permission-gated — notifications carry
- * no permission key of their own — just a basic ownership check (the row
- * must belong to the current user) enforced directly in the UPDATE's WHERE
- * clause, so a forged id for someone else's notification silently affects
- * zero rows instead of leaking a way to touch it.
- */
-export async function markNotificationReadAction(
-  notificationId: string,
-  _prevState: ActionState,
-  _formData: FormData,
-): Promise<ActionState> {
-  "use server";
-
-  const user = await getCurrentUser();
-  if (!user) return { error: "يجب تسجيل الدخول." };
-
-  await db
-    .update(notifications)
-    .set({ isRead: true, readAt: new Date() })
-    .where(and(eq(notifications.id, notificationId), eq(notifications.userId, user.id)));
-
-  return { success: true };
-}
-
-/** Marks every unread notification of the current user as read, in one UPDATE. */
-export async function markAllNotificationsReadAction(
-  _prevState: ActionState,
-  _formData: FormData,
-): Promise<ActionState> {
-  "use server";
-
-  const user = await getCurrentUser();
-  if (!user) return { error: "يجب تسجيل الدخول." };
-
-  await db
-    .update(notifications)
-    .set({ isRead: true, readAt: new Date() })
-    .where(and(eq(notifications.userId, user.id), eq(notifications.isRead, false)));
-
-  return { success: true };
-}
+// markNotificationReadAction / markAllNotificationsReadAction live in
+// ./notifications-actions.ts (a dedicated "use server" file), NOT here.
+// This module is imported by plain server code all over the app (queries.ts
+// files, other Server Actions) as well as by getNotificationsForUser() from
+// the /api/notifications Route Handler, and it carries `import "server-only"`
+// plus a direct import of the pg-backed `db` client. A Client Component
+// (notification-bell.tsx) needs to call the two mark-read actions directly,
+// and mixing those into this file broke that: Next bundled this entire
+// module (including `pg`, which needs Node's `tls`/`util/types`) into the
+// client bundle, 500ing every route under (app). Keeping the two mutating
+// actions in their own file, with no other value exports and no
+// `import "server-only"`, lets Next's "use server" handling replace them
+// with a server-action reference in the client bundle instead of inlining
+// their code (and their `db`/`server-only` imports) into it.
