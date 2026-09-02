@@ -199,7 +199,7 @@ export async function updateRepairStatusAction(
 
     if (targetStatus === "resolved") {
       const [job] = await tx
-        .select({ statusKey: jobStatuses.key })
+        .select({ statusId: jobs.statusId, statusKey: jobStatuses.key })
         .from(jobs)
         .innerJoin(jobStatuses, eq(jobs.statusId, jobStatuses.id))
         .where(eq(jobs.id, existing.jobId))
@@ -208,7 +208,25 @@ export async function updateRepairStatusAction(
         job &&
         (job.statusKey === "repair_needed" || job.statusKey === "repair_scheduled")
       ) {
-        await advanceJobStatus(tx, existing.jobId, "installed");
+        // NOT advanceJobStatus: "installed" sorts BEFORE repair_needed/
+        // repair_scheduled (a post-installation repair is a forward step
+        // past "installed"), so advanceJobStatus's forward-only guard
+        // would silently refuse this move. Resolving the repair that put
+        // the job into repair_needed/repair_scheduled is a deliberate,
+        // explicit exception — go back to "installed" directly, still
+        // race-safe via a conditional UPDATE against the exact status row
+        // just observed in this same transaction.
+        const [installedStatus] = await tx
+          .select({ id: jobStatuses.id })
+          .from(jobStatuses)
+          .where(eq(jobStatuses.key, "installed"))
+          .limit(1);
+        if (installedStatus) {
+          await tx
+            .update(jobs)
+            .set({ statusId: installedStatus.id, updatedAt: now })
+            .where(and(eq(jobs.id, existing.jobId), eq(jobs.statusId, job.statusId)));
+        }
       }
     }
 

@@ -222,24 +222,44 @@ async function main() {
   );
 
   console.log("Seeding vehicles...");
-  const [mercedes, transitVan] = await db
+  const [mercedes, transitVan, deliveryVan] = await db
     .insert(schema.vehicles)
     .values([
       { name: "מרצדס / Mercedes", plateNumber: "12-345-67", fuelType: "diesel", defaultResponsibleUserId: issam.id, estimatedValue: "120000.00" },
       { name: "Transit Van", plateNumber: "98-765-43", fuelType: "diesel", defaultResponsibleUserId: mohammad.id, estimatedValue: "80000.00" },
+      { name: "فان التوصيل / Delivery Van", plateNumber: "34-567-89", fuelType: "petrol", defaultResponsibleUserId: basel.id, estimatedValue: "55000.00" },
     ])
     .returning();
   await db.insert(schema.vehicleResponsibilityHistory).values([
     { vehicleId: mercedes.id, userId: issam.id, startDate: dateOnly(daysAgo(240)) },
     { vehicleId: transitVan.id, userId: mohammad.id, startDate: dateOnly(daysAgo(240)) },
+    { vehicleId: deliveryVan.id, userId: basel.id, startDate: dateOnly(daysAgo(150)) },
   ]);
   await db
     .update(schema.users)
     .set({ defaultVehicleId: mercedes.id })
     .where(sql`${schema.users.id} = ${issam.id}`);
+  // Spread across the last ~30 days, added by a mix of users (deliberately
+  // not always the vehicle's own responsible user — section 56 wants "who
+  // purchased fuel" visibly distinct from "who's responsible"), and
+  // including a couple of entries within the last day so the vehicle
+  // detail page's current-calendar-month total is never a trivial zero.
   await db.insert(schema.fuelLogs).values([
+    // Mercedes (responsible: Issam)
+    { vehicleId: mercedes.id, addedByUserId: amr.id, amount: "280.00", fuelType: "diesel", liters: "42", mileage: 118500, loggedAt: daysAgo(29) },
+    { vehicleId: mercedes.id, addedByUserId: issam.id, amount: "260.00", fuelType: "diesel", liters: "38", mileage: 119200, loggedAt: daysAgo(18) },
     { vehicleId: mercedes.id, addedByUserId: basel.id, amount: "300.00", fuelType: "diesel", liters: "45.5", loggedAt: daysAgo(6), notes: "Fill-up before Ahmad job installation." },
+    { vehicleId: mercedes.id, addedByUserId: mohammad.id, amount: "290.00", fuelType: "diesel", liters: "40", mileage: 119800, loggedAt: daysAgo(1) },
+    { vehicleId: mercedes.id, addedByUserId: issam.id, amount: "150.00", fuelType: "diesel", liters: "20", loggedAt: daysAgo(0) },
+    // Transit Van (responsible: Mohammad)
     { vehicleId: transitVan.id, addedByUserId: mohammad.id, amount: "220.00", fuelType: "diesel", liters: "33", loggedAt: daysAgo(20) },
+    { vehicleId: transitVan.id, addedByUserId: issam.id, amount: "240.00", fuelType: "diesel", liters: "35", mileage: 76400, loggedAt: daysAgo(14) },
+    { vehicleId: transitVan.id, addedByUserId: amr.id, amount: "200.00", fuelType: "diesel", liters: "30", loggedAt: daysAgo(3) },
+    { vehicleId: transitVan.id, addedByUserId: basel.id, amount: "180.00", fuelType: "diesel", liters: "25", loggedAt: daysAgo(0) },
+    // Delivery Van (responsible: Basel)
+    { vehicleId: deliveryVan.id, addedByUserId: basel.id, amount: "150.00", fuelType: "petrol", liters: "22", loggedAt: daysAgo(28) },
+    { vehicleId: deliveryVan.id, addedByUserId: mohammad.id, amount: "170.00", fuelType: "petrol", liters: "25", loggedAt: daysAgo(10) },
+    { vehicleId: deliveryVan.id, addedByUserId: amr.id, amount: "160.00", fuelType: "petrol", liters: "23", loggedAt: daysAgo(1) },
   ]);
 
   console.log("Seeding cash accounts...");
@@ -624,6 +644,20 @@ async function main() {
   await db.insert(schema.cashTransactions).values({
     cashAccountId: mohammadCash.id, direction: "in", amount: "2000.00", sourceType: "customer_payment", sourceId: reemDeposit.id, createdByUserId: mohammad.id, createdAt: daysAgo(14),
   });
+  // A second open repair (Nabil's above is left untouched — this is a NEW
+  // row, in a different status, on a different job), so /repairs and the
+  // dashboard's open-repairs widget show more than one row and more than
+  // one status.
+  await db.insert(schema.repairs).values({
+    jobId: reemJob.id,
+    problemDescription: "خدش عميق لوحظ على أحد ألواح زجاج الواجهة بعد التسليم من المصنع.",
+    dateReported: dateOnly(daysAgo(2)),
+    responsibleUserId: basel.id,
+    scheduledDate: dateOnly(daysAgo(1)),
+    status: "in_progress",
+    createdByUserId: mohammad.id,
+    notes: "جاري تنسيق استبدال اللوح مع المصنع قبل موعد التركيب.",
+  });
 
   // ---------------------------------------------------------------------
   // Job 5: نبيل عودة — Installed but with an open repair, a partial
@@ -859,9 +893,38 @@ async function main() {
     status: "future", notes: "دفعة مقدمة، شيك مؤجل.",
   });
 
+  // ---------------------------------------------------------------------
+  // Job 7: كريم شاهين — Installed, fully paid, no open repairs: the one
+  // seeded job that closeJobAction can actually succeed on untouched, so
+  // Phase 9 verification doesn't have to fabricate a clean scenario from
+  // scratch.
+  // ---------------------------------------------------------------------
+  console.log("Seeding Job 7: Karim (installed, fully paid, no open repairs — closeable as-is)...");
+  const [karim] = await db.insert(schema.customers).values({
+    name: "كريم شاهين", phone: "+972505557007", address: "شارع الرشيدية 12، الناصرة", createdByUserId: mohammad.id,
+  }).returning();
+  const [karimJob] = await db.insert(schema.jobs).values({
+    jobNumber: "JOB-2026-0007", customerId: karim.id, statusId: statusByKey.installed.id,
+    title: "Balcony glass railing", measuredByUserId: basel.id, pricingResponsibleUserId: mohammad.id,
+    dealClosedByUserId: mohammad.id, salePriceTotal: "3000.00", createdByUserId: mohammad.id, createdAt: daysAgo(12),
+  }).returning();
+  await db.insert(schema.jobItems).values({
+    jobId: karimJob.id, workTypeId: workTypeByKey.glass_railing.id, description: "Balcony glass railing", quantity: "12", unit: "meter", salePrice: "3000.00", status: "installed",
+  });
+  await db.insert(schema.jobAssignments).values({ jobId: karimJob.id, userId: basel.id, role: "installer", createdByUserId: mohammad.id });
+  const [karimPayment] = await db.insert(schema.customerPayments).values({
+    customerId: karim.id, jobId: karimJob.id, amount: "3000.00", paymentDate: dateOnly(daysAgo(2)),
+    method: "bank_transfer", receivedByUserId: mohammad.id, approvalStatus: "approved",
+    createdByUserId: mohammad.id, approvedByUserId: mohammad.id, approvedAt: daysAgo(2), createdAt: daysAgo(2),
+    notes: "دفعة كاملة عند التركيب.",
+  }).returning();
+  await db.insert(schema.cashTransactions).values({
+    cashAccountId: mohammadCash.id, direction: "in", amount: "3000.00", sourceType: "customer_payment", sourceId: karimPayment.id, createdByUserId: mohammad.id, createdAt: daysAgo(2),
+  });
+
   console.log("Seeding number sequences (continuing on from the demo jobs/quotes above, which use hardcoded numbers rather than nextDocumentNumber())...");
   await db.insert(schema.numberSequences).values([
-    { scope: "job", year: 2026, lastValue: 6 }, // JOB-2026-0001..0006 used above
+    { scope: "job", year: 2026, lastValue: 7 }, // JOB-2026-0001..0007 used above
     { scope: "quote", year: 2026, lastValue: 5 }, // Q-2026-0001..0005 used above
   ]);
 
