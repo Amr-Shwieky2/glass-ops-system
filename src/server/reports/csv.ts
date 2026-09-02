@@ -16,7 +16,7 @@ import "server-only";
  * instead of evaluating it, and plain CSV consumers just see an extra
  * leading character on that one field.
  */
-function escapeCsvField(value: string): string {
+export function escapeCsvField(value: string): string {
   const neutralized = /^[=+\-@]/.test(value) ? `'${value}` : value;
   if (/["\n\r,]/.test(neutralized)) {
     return `"${neutralized.replace(/"/g, '""')}"`;
