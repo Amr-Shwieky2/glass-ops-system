@@ -2,9 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/server/db/client";
-import { productionRequests, factorySubmissions, jobCosts } from "@/server/db/schema";
+import {
+  productionRequests,
+  factorySubmissions,
+  jobCosts,
+  approvalRequests,
+} from "@/server/db/schema";
 import { getCurrentUser } from "@/server/auth/session";
 import { can } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
@@ -73,6 +78,28 @@ export async function approveFactorySubmission(
     });
 
     await advanceJobStatus(tx, jobId, "ready_from_factory");
+
+    // Retrofit (Phase 10a, additive-only): mirror this decision onto the
+    // matching approval_requests row so the unified approvals queue drops
+    // it too. Race-safe conditional UPDATE like every other decide action
+    // (src/server/approvals/decide.ts) — WHERE status = 'pending', so a
+    // concurrent decider can't double-write it. This is pure bookkeeping
+    // for the queue; the real decision above is factorySubmissions.approvalStatus.
+    await tx
+      .update(approvalRequests)
+      .set({
+        status: "approved",
+        decidedByUserId: user!.id,
+        decidedAt: now,
+        rejectionReason: null,
+      })
+      .where(
+        and(
+          eq(approvalRequests.entityType, "factory_submission"),
+          eq(approvalRequests.entityId, submissionId),
+          eq(approvalRequests.status, "pending"),
+        ),
+      );
 
     await recordAudit(
       {
@@ -159,6 +186,24 @@ export async function rejectFactorySubmission(
       .update(productionRequests)
       .set({ status: "rejected", updatedAt: now })
       .where(eq(productionRequests.id, request.id));
+
+    // Retrofit (Phase 10a, additive-only) — see the matching comment in
+    // approveFactorySubmission above.
+    await tx
+      .update(approvalRequests)
+      .set({
+        status: "rejected",
+        decidedByUserId: user!.id,
+        decidedAt: now,
+        rejectionReason: parsed.data.rejectionReason,
+      })
+      .where(
+        and(
+          eq(approvalRequests.entityType, "factory_submission"),
+          eq(approvalRequests.entityId, submissionId),
+          eq(approvalRequests.status, "pending"),
+        ),
+      );
 
     await recordAudit(
       {

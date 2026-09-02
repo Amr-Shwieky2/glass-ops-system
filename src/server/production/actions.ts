@@ -19,8 +19,9 @@ import { PERMISSIONS, type PermissionKey } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
 import { notifyUsers } from "@/server/notifications";
 import { generateSecureToken } from "@/server/tokens";
-import { parseNonNegativeMoneyInput } from "@/server/money";
+import { parseNonNegativeMoneyInput, formatILS } from "@/server/money";
 import { advanceJobStatus } from "@/server/jobs/status";
+import { createApprovalRequest } from "@/server/approvals/decide";
 
 export interface ActionState {
   error?: string;
@@ -185,18 +186,48 @@ export async function submitFactoryPriceAction(
   }
 
   await db.transaction(async (tx) => {
-    await tx.insert(factorySubmissions).values({
-      productionRequestId: request.id,
-      submittedPrice,
-      notes: parsed.data.notes,
-      estimatedReadyDate: parsed.data.estimatedReadyDate || null,
-      submittedAt: new Date(),
-    });
+    const [submission] = await tx
+      .insert(factorySubmissions)
+      .values({
+        productionRequestId: request.id,
+        submittedPrice,
+        notes: parsed.data.notes,
+        estimatedReadyDate: parsed.data.estimatedReadyDate || null,
+        submittedAt: new Date(),
+      })
+      .returning({ id: factorySubmissions.id });
 
     await tx
       .update(productionRequests)
       .set({ status: "submitted", updatedAt: new Date() })
       .where(eq(productionRequests.id, request.id));
+
+    // Retrofit (Phase 10a): factory submissions predate createApprovalRequest
+    // and have always tracked their own pending/approved/rejected state on
+    // factorySubmissions.approvalStatus directly (see approve.ts) — this
+    // adds the parallel approval_requests bookkeeping ADDITIVELY, purely so
+    // the unified approvals queue (section 59/61) also surfaces these, it
+    // changes nothing about the primary status machine above. There is no
+    // "submitter" user (the factory link is public/tokenless), so we
+    // attribute the request to whoever originally requested production —
+    // always set today (sendToFactoryAction always fills it in), but the
+    // column is nullable, so skip creating the row in that hypothetical
+    // case rather than writing a hard non-null assertion.
+    if (request.requestedByUserId) {
+      const [job] = await tx
+        .select({ jobNumber: jobs.jobNumber })
+        .from(jobs)
+        .where(eq(jobs.id, request.jobId))
+        .limit(1);
+
+      await createApprovalRequest(tx, {
+        entityType: "factory_submission",
+        entityId: submission.id,
+        requestedByUserId: request.requestedByUserId,
+        summary: `عرض سعر من المصنع للمهمة ${job?.jobNumber ?? ""} بمبلغ ${formatILS(submittedPrice)}`.trim(),
+        relatedJobId: request.jobId,
+      });
+    }
 
     await recordAudit(
       {
