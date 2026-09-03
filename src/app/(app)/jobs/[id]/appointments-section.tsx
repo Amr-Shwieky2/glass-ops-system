@@ -26,6 +26,7 @@ const APPOINTMENT_TYPE_LABEL_AR: Record<string, string> = {
 
 const APPOINTMENT_STATUS_LABEL_AR: Record<string, string> = {
   scheduled: "مجدول",
+  arrived: "وصل الموقع",
   completed: "مكتمل",
   cancelled: "ملغى",
 };
@@ -35,6 +36,7 @@ const APPOINTMENT_STATUS_VARIANT: Record<
   "info" | "success" | "outline"
 > = {
   scheduled: "info",
+  arrived: "info",
   completed: "success",
   cancelled: "outline",
 };
