@@ -18,10 +18,9 @@ import { can } from "@/server/auth/permissions";
 import { PERMISSIONS, type PermissionKey } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
 import { notifyUsers } from "@/server/notifications";
-import { generateSecureToken } from "@/server/tokens";
 import { parseNonNegativeMoneyInput, formatILS } from "@/server/money";
-import { advanceJobStatus } from "@/server/jobs/status";
 import { createApprovalRequest } from "@/server/approvals/decide";
+import { createProductionRequest } from "./create-request";
 
 export interface ActionState {
   error?: string;
@@ -98,36 +97,15 @@ export async function sendToFactoryAction(
     return { error: "تم إرسال هذه المهمة إلى المصنع بالفعل." };
   }
 
-  const token = generateSecureToken();
-
+  let token = "";
   await db.transaction(async (tx) => {
-    const [request] = await tx
-      .insert(productionRequests)
-      .values({
-        jobId,
-        requestedByUserId: user!.id,
-        details: parsed.data.details,
-        estimatedReadyDate: parsed.data.estimatedReadyDate || null,
-      })
-      .returning();
-
-    await tx.insert(factoryPublicLinks).values({
-      productionRequestId: request.id,
-      token,
+    const result = await createProductionRequest(tx, {
+      jobId,
+      details: parsed.data.details,
+      estimatedReadyDate: parsed.data.estimatedReadyDate || null,
+      requestedByUserId: user!.id,
     });
-
-    await advanceJobStatus(tx, jobId, "in_production");
-
-    await recordAudit(
-      {
-        userId: user!.id,
-        action: "production_request.create",
-        entityType: "production_request",
-        entityId: request.id,
-        newValue: { jobId },
-      },
-      tx,
-    );
+    token = result.token;
   });
 
   revalidatePath(`/jobs/${jobId}`);
