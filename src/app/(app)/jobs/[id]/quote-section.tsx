@@ -1,6 +1,7 @@
 import { FileText, CheckCircle2 } from "lucide-react";
 import type { VariantProps } from "class-variance-authority";
 import { formatILS } from "@/server/money";
+import { unitLabelAr } from "@/lib/units";
 import type { QuoteForJob } from "@/server/quotes/queries";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge, type badgeVariants } from "@/components/ui/badge";
@@ -152,7 +153,7 @@ export function QuoteSection({
                       {item.workTypeLabelAr || item.description}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {item.quantity} {item.unit ?? ""} × {formatILS(item.unitPrice)}
+                      {item.quantity} {unitLabelAr(item.unit)} × {formatILS(item.unitPrice)}
                     </p>
                   </div>
                   <span dir="ltr" className="font-medium text-foreground">

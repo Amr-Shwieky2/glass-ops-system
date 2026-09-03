@@ -5,6 +5,7 @@ import { useTransition } from "react";
 import { toast } from "sonner";
 import { CheckCircle2 } from "lucide-react";
 import { completeInstallationAction } from "@/server/appointments/complete-installation";
+import { unitLabelAr } from "@/lib/units";
 import type { MyDayJobItem } from "@/server/appointments/queries";
 import {
   Dialog,
@@ -114,7 +115,7 @@ export function CompleteInstallationDialog({
                     />
                     <Label htmlFor={`item-${item.id}`} className="font-normal">
                       {item.workTypeLabelAr ?? item.description ?? "بند عمل"}
-                      {` (${item.quantity} ${item.unit ?? ""})`}
+                      {` (${item.quantity} ${unitLabelAr(item.unit)})`}
                     </Label>
                   </div>
                 ))}

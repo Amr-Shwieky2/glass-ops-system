@@ -8,6 +8,7 @@ import { Plus } from "lucide-react";
 import type { CompensationRuleOption } from "@/server/compensation/queries";
 import { allocateInstallationEarning, type ActionState } from "@/server/compensation/actions";
 import { useCloseOnSuccess } from "@/lib/use-close-on-success";
+import { unitLabelAr } from "@/lib/units";
 import { formatILS } from "@/server/money";
 import {
   Dialog,
@@ -186,7 +187,7 @@ export function AllocateEarningDialog({
                   <SelectContent>
                     {compensationRules.map((r) => (
                       <SelectItem key={r.id} value={r.id}>
-                        {r.label} ({formatILS(r.amount)} / {r.unit})
+                        {r.label} ({formatILS(r.amount)} / {unitLabelAr(r.unit)})
                       </SelectItem>
                     ))}
                   </SelectContent>

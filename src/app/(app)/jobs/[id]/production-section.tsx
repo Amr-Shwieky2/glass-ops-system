@@ -1,5 +1,6 @@
 import { Factory, CheckCircle2, XCircle } from "lucide-react";
 import { formatILS } from "@/server/money";
+import { unitLabelAr } from "@/lib/units";
 import type { ProductionRequestForJob } from "@/server/production/queries";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -38,7 +39,7 @@ function summarizeJobItemsForFactory(items: JobItemForFactorySummary[]): string 
   return items
     .map(
       (item) =>
-        `- ${item.workTypeLabelAr || item.description || "بند عمل"} (${item.quantity} ${item.unit ?? ""})`,
+        `- ${item.workTypeLabelAr || item.description || "بند عمل"} (${item.quantity} ${unitLabelAr(item.unit)})`,
     )
     .join("\n");
 }

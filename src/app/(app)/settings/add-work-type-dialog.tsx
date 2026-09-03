@@ -68,7 +68,7 @@ export function AddWorkTypeDialog() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="defaultUnit">الوحدة الافتراضية *</Label>
-              <Input id="defaultUnit" name="defaultUnit" dir="ltr" placeholder="meter" required />
+              <Input id="defaultUnit" name="defaultUnit" placeholder="متر" required />
             </div>
             <div className="space-y-2">
               <Label htmlFor="sortOrder">ترتيب العرض *</Label>

@@ -18,6 +18,7 @@ import { getJobAppointments } from "@/server/appointments/queries";
 import { getJobPayments } from "@/server/payments/queries";
 import { getJobCostsForJob, getJobProfitability } from "@/server/costs/queries";
 import { getJobRepairs } from "@/server/repairs/queries";
+import { unitLabelAr } from "@/lib/units";
 import {
   getJobCompensationEntries,
   getCompensationRules,
@@ -408,7 +409,7 @@ export default async function JobDetailPage({
                     </p>
                     <p className="text-sm text-muted-foreground">
                       {item.description && item.workTypeLabelAr ? `${item.description} · ` : ""}
-                      {item.quantity} {item.unit ?? ""}
+                      {item.quantity} {unitLabelAr(item.unit)}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">

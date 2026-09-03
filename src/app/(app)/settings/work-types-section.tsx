@@ -1,6 +1,7 @@
 "use client";
 
 import { updateWorkTypeAction } from "@/server/lookups/actions";
+import { unitLabelAr } from "@/lib/units";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -66,8 +67,8 @@ export function WorkTypesSection({ workTypes }: { workTypes: WorkTypeRow[] }) {
                     <TableCell dir="ltr" className="text-end text-muted-foreground">
                       {wt.labelEn}
                     </TableCell>
-                    <TableCell dir="ltr" className="text-end text-muted-foreground">
-                      {wt.defaultUnit}
+                    <TableCell className="text-end text-muted-foreground">
+                      {unitLabelAr(wt.defaultUnit)}
                     </TableCell>
                     <TableCell dir="ltr" className="text-end text-muted-foreground">
                       {wt.sortOrder}

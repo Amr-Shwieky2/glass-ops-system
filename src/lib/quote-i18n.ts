@@ -45,6 +45,12 @@ export interface QuoteLabels {
      * same word, for the grand-total row below the table). */
     lineTotal: string;
   };
+  /** Free-text unit codes on quoteItems.unit ("meter" | "unit" | "job" |
+   * "day") mapped to a plain noun in this quote's language — "متر"/"מטר",
+   * "قطعة"/"יחידה", "مهمة"/"עבודה", "يوم"/"יום". A unit not in the map
+   * (including one already written out in this language) is returned
+   * unchanged, so any existing or freely-typed unit text still displays. */
+  unitLabel(unit: string | null | undefined): string;
   /** "المجموع الفرعي" / "סכום ביניים" */
   subtotal: string;
   /** "الإجمالي" / "סה״כ" — the grand-total row label. */
@@ -112,6 +118,20 @@ export interface QuoteLabels {
   };
 }
 
+const UNIT_MAP_AR: Record<string, string> = {
+  meter: "متر",
+  unit: "قطعة",
+  job: "مهمة",
+  day: "يوم",
+};
+
+const UNIT_MAP_HE: Record<string, string> = {
+  meter: "מטר",
+  unit: "יחידה",
+  job: "עבודה",
+  day: "יום",
+};
+
 const AR: QuoteLabels = {
   documentTitlePrefix: "عرض سعر",
   version: "الإصدار",
@@ -126,6 +146,7 @@ const AR: QuoteLabels = {
     unitPrice: "سعر الوحدة",
     lineTotal: "الإجمالي",
   },
+  unitLabel: (unit) => (unit ? (UNIT_MAP_AR[unit] ?? unit) : ""),
   subtotal: "المجموع الفرعي",
   total: "الإجمالي",
   paymentTermsHeading: "شروط الدفع",
@@ -177,6 +198,7 @@ const HE: QuoteLabels = {
     unitPrice: "מחיר יחידה",
     lineTotal: "סה״כ",
   },
+  unitLabel: (unit) => (unit ? (UNIT_MAP_HE[unit] ?? unit) : ""),
   subtotal: "סכום ביניים",
   total: "סה״כ",
   paymentTermsHeading: "תנאי תשלום",

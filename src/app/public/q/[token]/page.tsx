@@ -75,7 +75,7 @@ function QuoteSummary({
                   {item.workTypeLabelAr || item.description}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {item.quantity} {item.unit ?? ""} × {formatILS(item.unitPrice)}
+                  {item.quantity} {labels.unitLabel(item.unit)} × {formatILS(item.unitPrice)}
                 </p>
               </div>
               <span dir="ltr" className="font-medium text-foreground">

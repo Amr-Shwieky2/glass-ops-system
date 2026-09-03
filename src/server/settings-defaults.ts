@@ -42,9 +42,9 @@ export const SETTINGS_DEFAULTS: SettingsSchema = {
   },
   quote_default_terms: {
     paymentTerms:
-      "50% deposit on signing, remainder due on completion of installation.",
+      "50% دفعة مقدمة عند التوقيع، والباقي يُستحق عند إتمام التركيب.",
     workTerms:
-      "Measurements are final once confirmed on site. Any change to items, quantities or specifications after signing requires a new quote version and a new signature.",
+      "القياسات نهائية بعد تأكيدها في الموقع. أي تغيير في البنود أو الكميات أو المواصفات بعد التوقيع يتطلب نسخة عرض سعر جديدة وتوقيعاً جديداً.",
   },
   notification_thresholds: {
     measurementReminderMinutesBefore: 60,

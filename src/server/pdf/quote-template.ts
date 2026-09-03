@@ -95,7 +95,7 @@ export function renderQuoteHtml(data: QuoteTemplateData): string {
             ? `<div class="desc-sub">${esc(item.description)}</div>`
             : ""
         }</td>
-        <td class="num">${esc(item.quantity)} ${esc(item.unit || "")}</td>
+        <td class="num">${esc(item.quantity)} ${esc(labels.unitLabel(item.unit))}</td>
         <td class="num">${formatILS(item.unitPrice)}</td>
         <td class="num strong">${formatILS(item.lineTotal)}</td>
       </tr>`,
