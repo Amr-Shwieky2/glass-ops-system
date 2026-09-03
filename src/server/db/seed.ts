@@ -823,6 +823,17 @@ async function main() {
     { appointmentId: reemInstallAppt.id, userId: issam.id },
     { appointmentId: reemInstallAppt.id, userId: basel.id },
   ]);
+  // Mirrors Job 1 (Ahmad)'s pattern above: an installation appointment's
+  // assignees also need a matching job-level jobAssignments row (role
+  // "installer"), since /jobs and the job detail page's own permission
+  // check (involvementFilter / isInvolved) are scoped to jobAssignments,
+  // not appointmentAssignees. Without this, Issam/Basel could mark the
+  // appointment arrived and add field notes via My Day but could never
+  // view the job itself.
+  await db.insert(schema.jobAssignments).values([
+    { jobId: reemJob.id, userId: issam.id, role: "installer", createdByUserId: mohammad.id },
+    { jobId: reemJob.id, userId: basel.id, role: "installer", createdByUserId: mohammad.id },
+  ]);
   await db
     .update(schema.jobs)
     .set({ statusId: statusByKey.installation_scheduled.id })

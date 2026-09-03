@@ -67,7 +67,6 @@ async function main() {
   const idByPhone = Object.fromEntries(usersRes.rows.map((r) => [r.phone, r.id]));
   const amrId = idByPhone["+972501111111"];
   const mohammadId = idByPhone["+972502222222"];
-  const baselId = idByPhone["+972504444444"];
 
   async function appointment(jobNumber, type) {
     const { rows } = await pool.query(
@@ -214,6 +213,7 @@ async function main() {
     // appointments, including Sara's job.
     // ===================================================================
     console.log("\n=== Part C: non-assignee cannot see/act on someone else's appointment ===");
+    await employeeCtx.clearCookies();
     await login(page, "0502222222", "password123"); // Mohammad
     await page.goto(`${BASE_URL}/my-day`, { waitUntil: "networkidle" });
     text = await page.innerText("body");
@@ -235,6 +235,7 @@ async function main() {
     const reemBefore = await jobIdAndNotes("JOB-2026-0004");
     check("Reem's job starts with no notes yet (DB, seeded)", !reemBefore?.notes);
 
+    await employeeCtx.clearCookies();
     await login(page, "0504444444", "password123"); // Basel
     await page.goto(`${BASE_URL}/my-day`, { waitUntil: "networkidle" });
     const reemCard = page.locator('[data-slot="card"]', { hasText: "JOB-2026-0004" });
@@ -276,7 +277,11 @@ async function main() {
     await reemCard.locator('button:has-text("رفع ملاحظة")').click();
     dialog = page.locator('[role="dialog"]');
     await dialog.locator('button:has-text("حفظ")').click();
-    await page.waitForSelector('[role="alert"]', { timeout: 10000 });
+    // Wait on the actual error text, not just the [role="alert"] element's
+    // presence — the element can attach a beat before React commits its
+    // text child, which made this a flaky false-negative when checked via
+    // waitForSelector('[role="alert"]') followed immediately by innerText().
+    await page.waitForSelector("text=نص الملاحظة مطلوب", { timeout: 10000 });
     text = await dialog.innerText();
     check("empty note is rejected server-side with the expected Arabic message", text.includes("نص الملاحظة مطلوب"));
     await dialog.locator('button:has-text("إلغاء")').click();
