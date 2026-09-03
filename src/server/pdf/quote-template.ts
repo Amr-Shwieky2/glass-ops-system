@@ -1,5 +1,7 @@
 import type { SettingsSchema } from "@/server/settings-defaults";
 import { formatILS } from "@/server/money";
+import { getQuoteLabels, type QuoteLanguage } from "@/lib/quote-i18n";
+import { hebrewFontFaceCss } from "./hebrew-font";
 
 export interface QuoteTemplateItem {
   description: string;
@@ -12,6 +14,11 @@ export interface QuoteTemplateItem {
 
 export interface QuoteTemplateData {
   companyInfo: SettingsSchema["company_info"];
+  /** "ar" | "he" — defaults to "ar" so every quote from before this field
+   * existed (or that never sets it) renders byte-for-byte identically to
+   * before this field was added. Mirrors the quotes table's `language`
+   * column (see src/server/db/schema/quotes.ts). */
+  language?: QuoteLanguage;
   quoteNumber: string;
   versionNumber: number;
   createdAt: Date;
@@ -44,20 +51,40 @@ function esc(value: string | null | undefined): string {
     .replace(/'/g, "&#39;");
 }
 
-const dateFmt = new Intl.DateTimeFormat("ar", {
-  year: "numeric",
-  month: "long",
-  day: "numeric",
-  numberingSystem: "latn",
-});
-
 /** Pure function: assembles the full self-contained HTML document for a
- * quote (section 18). Rendered to PDF via src/server/pdf/render.ts. Uses
- * the system-installed Noto Naskh Arabic font by name (the PDF is rendered
- * by a Chromium this same server controls, not shipped to an arbitrary
- * viewer's browser, so referencing an OS font is correct here — unlike a
- * page served live to the public, which cannot assume any font exists). */
+ * quote (section 18). Rendered to PDF via src/server/pdf/render.ts.
+ *
+ * `data.language` (defaulting to "ar") selects the label set from
+ * src/lib/quote-i18n.ts and the date-formatting locale; every existing
+ * Arabic quote — which has no explicit language — renders byte-for-byte
+ * identically to before this parameter existed.
+ *
+ * Arabic uses the system-installed Noto Naskh Arabic font by name (the PDF
+ * is rendered by a Chromium this same server controls, not shipped to an
+ * arbitrary viewer's browser, so referencing an OS font is correct here —
+ * unlike a page served live to the public, which cannot assume any font
+ * exists). Hebrew instead uses an embedded, self-hosted Noto Sans Hebrew
+ * (src/server/pdf/hebrew-font.ts) rather than relying on an OS font,
+ * since — unlike Arabic support, which this template's font stack has
+ * depended on since before this change and is left untouched — nothing
+ * upstream (the Dockerfile's Playwright install, or any OS package) is
+ * known to actually provision a Hebrew-capable system font — RTL Hebrew
+ * rendering was verified visually against this exact embedded font via a
+ * headless-Chromium test render before this template shipped. */
 export function renderQuoteHtml(data: QuoteTemplateData): string {
+  const language: QuoteLanguage = data.language ?? "ar";
+  const labels = getQuoteLabels(language);
+  const dateFmt = new Intl.DateTimeFormat(language === "he" ? "he" : "ar", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    numberingSystem: "latn",
+  });
+  const bodyFontFamily =
+    language === "he"
+      ? `"Noto Sans Hebrew", "Noto Naskh Arabic", "Noto Sans Arabic", sans-serif`
+      : `"Noto Naskh Arabic", "Noto Sans Arabic", sans-serif`;
+
   const rows = data.items
     .map(
       (item, i) => `
@@ -78,26 +105,26 @@ export function renderQuoteHtml(data: QuoteTemplateData): string {
   const signatureBlock = data.signature
     ? `
       <div class="sign-box signed">
-        <p class="sign-label">توقيع العميل</p>
-        <img src="${data.signature.signatureImage}" alt="التوقيع" class="sign-img" />
+        <p class="sign-label">${esc(labels.signature.sectionLabel)}</p>
+        <img src="${data.signature.signatureImage}" alt="${esc(labels.signature.imageAlt)}" class="sign-img" />
         <p class="sign-meta">${esc(data.signature.customerNameAtSigning)} · ${dateFmt.format(data.signature.signedAt)}</p>
       </div>`
     : `
       <div class="sign-box">
-        <p class="sign-label">توقيع العميل</p>
+        <p class="sign-label">${esc(labels.signature.sectionLabel)}</p>
         <div class="sign-line"></div>
-        <p class="sign-meta">الاسم والتاريخ</p>
+        <p class="sign-meta">${esc(labels.signature.unsignedPlaceholder)}</p>
       </div>`;
 
   return `<!doctype html>
-<html lang="ar" dir="rtl">
+<html lang="${language === "he" ? "he" : "ar"}" dir="rtl">
 <head>
 <meta charset="utf-8" />
-<title>عرض سعر ${esc(data.quoteNumber)}</title>
-<style>
+<title>${esc(labels.documentTitlePrefix)} ${esc(data.quoteNumber)}</title>
+<style>${language === "he" ? hebrewFontFaceCss() : ""}
   * { box-sizing: border-box; }
   body {
-    font-family: "Noto Naskh Arabic", "Noto Sans Arabic", sans-serif;
+    font-family: ${bodyFontFamily};
     color: #1a1a1a;
     font-size: 13px;
     line-height: 1.6;
@@ -164,22 +191,22 @@ export function renderQuoteHtml(data: QuoteTemplateData): string {
       </div>
     </div>
     <div class="doc-title">
-      <h1>عرض سعر ${esc(data.quoteNumber)}</h1>
-      <p>الإصدار ${data.versionNumber}</p>
-      <p>التاريخ: ${dateFmt.format(data.createdAt)}</p>
-      ${data.validUntil ? `<p>صالح حتى: ${dateFmt.format(new Date(data.validUntil))}</p>` : ""}
+      <h1>${esc(labels.documentTitlePrefix)} ${esc(data.quoteNumber)}</h1>
+      <p>${esc(labels.version)} ${data.versionNumber}</p>
+      <p>${esc(labels.date)}: ${dateFmt.format(data.createdAt)}</p>
+      ${data.validUntil ? `<p>${esc(labels.validUntil)}: ${dateFmt.format(new Date(data.validUntil))}</p>` : ""}
     </div>
   </div>
 
   <div class="parties">
     <div class="party">
-      <h3>بيانات العميل</h3>
+      <h3>${esc(labels.customerInfoHeading)}</h3>
       <p>${esc(data.customerName)}</p>
       ${data.customerPhone ? `<p dir="ltr" style="text-align:end">${esc(data.customerPhone)}</p>` : ""}
       ${data.customerAddress ? `<p>${esc(data.customerAddress)}</p>` : ""}
     </div>
     <div class="party">
-      <h3>بيانات المهمة</h3>
+      <h3>${esc(labels.jobInfoHeading)}</h3>
       <p>${esc(data.jobNumber)}</p>
       ${data.jobTitle ? `<p>${esc(data.jobTitle)}</p>` : ""}
     </div>
@@ -188,11 +215,11 @@ export function renderQuoteHtml(data: QuoteTemplateData): string {
   <table>
     <thead>
       <tr>
-        <th class="idx">#</th>
-        <th>الوصف</th>
-        <th>الكمية</th>
-        <th>سعر الوحدة</th>
-        <th>الإجمالي</th>
+        <th class="idx">${esc(labels.table.index)}</th>
+        <th>${esc(labels.table.description)}</th>
+        <th>${esc(labels.table.quantity)}</th>
+        <th>${esc(labels.table.unitPrice)}</th>
+        <th>${esc(labels.table.lineTotal)}</th>
       </tr>
     </thead>
     <tbody>${rows}</tbody>
@@ -200,16 +227,16 @@ export function renderQuoteHtml(data: QuoteTemplateData): string {
 
   <div class="totals">
     <table>
-      <tr><td>المجموع الفرعي</td><td class="num">${formatILS(data.subtotal)}</td></tr>
-      <tr class="grand"><td>الإجمالي</td><td class="num">${formatILS(data.total)}</td></tr>
+      <tr><td>${esc(labels.subtotal)}</td><td class="num">${formatILS(data.subtotal)}</td></tr>
+      <tr class="grand"><td>${esc(labels.total)}</td><td class="num">${formatILS(data.total)}</td></tr>
     </table>
   </div>
 
   ${
     data.paymentTerms || data.workTerms
       ? `<div class="terms">
-    ${data.paymentTerms ? `<h3>شروط الدفع</h3><p>${esc(data.paymentTerms)}</p>` : ""}
-    ${data.workTerms ? `<h3>شروط العمل</h3><p>${esc(data.workTerms)}</p>` : ""}
+    ${data.paymentTerms ? `<h3>${esc(labels.paymentTermsHeading)}</h3><p>${esc(data.paymentTerms)}</p>` : ""}
+    ${data.workTerms ? `<h3>${esc(labels.workTermsHeading)}</h3><p>${esc(data.workTerms)}</p>` : ""}
   </div>`
       : ""
   }
