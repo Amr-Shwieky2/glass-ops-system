@@ -330,8 +330,10 @@ async function main() {
       staffPdfBuf.slice(0, 4).toString("latin1") === "%PDF" && staffPdfBuf.length > 5000,
     );
 
+    // linkA is already an absolute URL (window.location.origin + publicPath,
+    // per send-quote-button.tsx) — do not prepend BASE_URL again here.
     const publicPdfResp = await customerPage.request.get(
-      `${BASE_URL}${linkA.replace("/public/q/", "/api/public/quotes/")}/pdf`,
+      `${linkA.replace("/public/q/", "/api/public/quotes/")}/pdf`,
     );
     check("public PDF route returns 200 for the Hebrew quote", publicPdfResp.status() === 200);
     const publicPdfBuf = await publicPdfResp.body();

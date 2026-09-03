@@ -89,8 +89,6 @@ export function SignForm({
   defaultAddress: string;
 }) {
   const labels = getQuoteLabels(language);
-  const action = signQuotePublicly.bind(null, token);
-  const [state, formAction] = useActionState(action, initialState);
   const [signature, setSignature] = React.useState<string | null>(null);
   const [agreed, setAgreed] = React.useState(false);
   const [coords, setCoords] = React.useState<{ lat: string; lng: string } | null>(null);
@@ -110,6 +108,32 @@ export function SignForm({
   const [phone, setPhone] = React.useState(() => readStoredProfile()?.phone || defaultPhone);
   const [idNumber, setIdNumber] = React.useState(() => readStoredProfile()?.idNumber || "");
 
+  // Wraps the server action so the "remember this profile for next time"
+  // write happens as a plain side effect of the submit itself, not in a
+  // useEffect keyed off `state.success`. On success this server action calls
+  // revalidatePath, and Next.js folds the refreshed RSC payload into the
+  // SAME transition that resolves useActionState — the parent Server
+  // Component then renders the signed view in SignForm's place, unmounting
+  // it in that same commit. A passive effect scheduled for that same
+  // state.success update never gets to run because the fiber it would run
+  // on is torn down first. Doing the write here, before this promise even
+  // resolves back into React, sidesteps that race entirely.
+  const action = React.useCallback(
+    async (prevState: ActionState, formData: FormData) => {
+      const result = await signQuotePublicly(token, prevState, formData);
+      if (result.success) {
+        writeStoredProfile({
+          name: String(formData.get("customerNameAtSigning") ?? "").trim(),
+          phone: String(formData.get("customerPhoneAtSigning") ?? "").trim(),
+          idNumber: String(formData.get("customerNationalIdAtSigning") ?? "").trim(),
+        });
+      }
+      return result;
+    },
+    [token],
+  );
+  const [state, formAction] = useActionState(action, initialState);
+
   React.useEffect(() => {
     if (!("geolocation" in navigator)) return;
     navigator.geolocation.getCurrentPosition(
@@ -120,13 +144,6 @@ export function SignForm({
       { timeout: 5000 },
     );
   }, []);
-
-  React.useEffect(() => {
-    if (!state.success) return;
-    writeStoredProfile({ name: name.trim(), phone: phone.trim(), idNumber: idNumber.trim() });
-    // Only re-run when the action transitions to success.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.success]);
 
   return (
     <Card>
