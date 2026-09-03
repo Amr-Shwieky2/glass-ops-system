@@ -152,25 +152,31 @@ async function main() {
     );
     await replayCtx.close();
 
-    console.log("6. Back as Amr: job now shows signed quote + Convert button...");
+    console.log(
+      "6. Back as Amr: the customer's own signature already auto-converted + auto-sent to factory (no manual click) ...",
+    );
     await page.goto(`${BASE_URL}${saraHref}`, { waitUntil: "networkidle" });
     text = await page.innerText("body");
     check("quote status shows موقّع", text.includes("موقّع"));
     check("signed banner shown", text.includes("تم توقيع هذا العرض من العميل"));
-    check("Convert-to-job button visible", text.includes("تحويل العرض إلى مهمة"));
-
-    console.log("7. Convert the signed quote into job items...");
-    await page.click('button:has-text("تحويل العرض إلى مهمة")');
-    await page.click('button:has-text("تحويل"):not(:has-text("العرض"))');
-    await page.waitForTimeout(800);
-    text = await page.innerText("body");
-    check("job items now reflect the quote (واجهة)", text.includes("زجاج واجهة تجريبي"));
+    check(
+      "no Convert-to-job button (auto-conversion already ran on signing)",
+      !text.includes("تحويل العرض إلى مهمة"),
+    );
+    check("job items already reflect the quote (واجهة)", text.includes("زجاج واجهة تجريبي"));
     check("job items include the mirror line", text.includes("مرآة مدخل"));
     check("job sale total shows 1200", /1,?200\.00|₪1,?200/.test(text));
-    check("Convert button gone after converting", !text.includes("تحويل العرض إلى مهمة"));
     check(
-      "job status advanced (production)",
-      text.includes("بانتظار الإنتاج") || text.includes("قيد الإنتاج"),
+      "no manual send-to-factory button (auto-sent to factory already ran)",
+      !text.includes("إرسال إلى المصنع"),
+    );
+    check(
+      "job status auto-advanced straight to in_production",
+      text.includes("قيد الإنتاج"),
+    );
+    check(
+      "auto-created production request details mention the quote's items",
+      text.includes("زجاج واجهة تجريبي"),
     );
 
     console.log("=== PDF generation ===");

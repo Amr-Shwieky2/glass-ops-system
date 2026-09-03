@@ -14,17 +14,31 @@ import {
 /**
  * Spec section 87: factory approval and job-cost approval.
  *
- * Drives a fresh job all the way from lead -> signed quote -> converted job
- * -> sent to the factory over its own public (tokenless) link -> submitted
- * -> rejected -> resubmitted -> approved, then confirms the resulting
- * job_costs row directly (category='factory_glass', status='approved'),
- * mirroring scripts/verify-phase6.mjs's real flow. A separate test covers
- * a general (non-factory) job cost's two-step approval gate (MANAGE_JOB_
- * COSTS to create it, APPROVE_REQUESTS to decide it — two independent
- * permissions, per src/server/costs/actions.ts).
+ * Drives a fresh job all the way from lead -> signed quote -> auto-converted
+ * job -> auto-sent to the factory over its own public (tokenless) link ->
+ * submitted -> rejected -> resubmitted -> approved, then confirms the
+ * resulting job_costs row directly (category='factory_glass',
+ * status='approved'), mirroring scripts/verify-phase6.mjs's real flow.
+ *
+ * The customer's own signature now runs the auto-convert-to-job and
+ * auto-send-to-factory cascade (see src/server/quotes/actions.ts's
+ * runPostSignAutomation) in one best-effort sequence right after the
+ * signature transaction commits — so quoteAndSignQuote below no longer
+ * clicks "تحويل إلى مهمة" or "إرسال إلى المصنع" itself; by the time it
+ * returns, both have already happened automatically and the job is already
+ * sitting in in_production with a production request + factory link. The
+ * manual buttons themselves (still the required fallback per this feature's
+ * design) get their own direct, unchanged coverage via
+ * convertQuoteToJob/sendToFactoryAction called outside the UI in
+ * tests/e2e/quotes.spec.ts and scripts/verify-req5-auto-routing.mjs — this
+ * file no longer needs to duplicate that.
+ *
+ * A separate test covers a general (non-factory) job cost's two-step
+ * approval gate (MANAGE_JOB_COSTS to create it, APPROVE_REQUESTS to decide
+ * it — two independent permissions, per src/server/costs/actions.ts).
  */
 
-async function quoteAndConvertToJob(
+async function quoteAndSignQuote(
   page: import("@playwright/test").Page,
   price: string,
   itemLabel: string,
@@ -52,10 +66,27 @@ async function quoteAndConvertToJob(
   await customerPage.waitForSelector("text=تم توقيع عرض السعر", { timeout: 10_000 });
   await customerCtx.close();
 
+  // The signature above already ran the full auto-convert + auto-send
+  // cascade server-side. Reload and confirm neither manual button is
+  // present any more (their step is already done) before the job is at
+  // in_production with an auto-created production request + factory link.
   await page.reload({ waitUntil: "networkidle" });
-  await page.click('button:has-text("تحويل العرض إلى مهمة")');
-  await page.locator('[role="alertdialog"] button:has-text("تحويل"):not(:has-text("العرض"))').click();
-  await page.waitForTimeout(800);
+  await expect(page.locator('button:has-text("تحويل العرض إلى مهمة")')).toHaveCount(0);
+  await expect(page.locator('button:has-text("إرسال إلى المصنع")')).toHaveCount(0);
+  const text = await page.innerText("body");
+  expect(text).toContain("قيد الإنتاج");
+}
+
+/** Pulls the auto-created factory link out of the already-visible "رابط
+ * المصنع" (show factory link) button — the automation issued this link
+ * itself, there is no send dialog left to read it from. */
+async function readAutoFactoryLink(page: import("@playwright/test").Page): Promise<string> {
+  await page.click('button:has-text("رابط المصنع")');
+  const dialog = page.locator('[role="dialog"]');
+  const link = await dialog.locator("input[readonly]").inputValue();
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+  return link;
 }
 
 test.describe("factory production approval", () => {
@@ -70,22 +101,16 @@ test.describe("factory production approval", () => {
       customerPhone: uniquePhone(),
       title: "اختبار موافقة المصنع",
     });
-    await quoteAndConvertToJob(page, "1400", "زجاج شرفة — اختبار إنتاج");
+    await quoteAndSignQuote(page, "1400", "زجاج شرفة — اختبار إنتاج");
     let text = await page.innerText("body");
-    expect(text).toContain("بانتظار الإنتاج");
+    // The auto-created production request's details text is built the same
+    // way the manual dialog used to prefill it (summarizeJobItemsFor
+    // AutoFactory mirrors summarizeJobItemsForFactory) — it already
+    // mentions the signed quote's item, right there on the job page.
+    expect(text).toContain("زجاج شرفة");
 
-    await page.click('button:has-text("إرسال إلى المصنع")');
-    const sendDialog = page.locator('[role="dialog"]');
-    const prefill = await sendDialog.locator("#details").inputValue();
-    expect(prefill).toContain("زجاج شرفة");
-    await sendDialog.locator('button:has-text("إرسال إلى المصنع")').click();
-    await page.waitForSelector("text=تم إنشاء طلب الإنتاج", { timeout: 10_000 });
-    const factoryLink = await sendDialog.locator("input[readonly]").inputValue();
+    const factoryLink = await readAutoFactoryLink(page);
     expect(factoryLink).toMatch(/\/public\/pr\//);
-    await sendDialog.locator('button:has-text("تم")').click();
-    await page.waitForTimeout(300);
-    text = await page.innerText("body");
-    expect(text).toContain("قيد الإنتاج");
 
     // The factory submits over the bare public link — a completely
     // separate, cookie-less browser context, no employee session at all.
@@ -158,7 +183,11 @@ test.describe("factory production approval", () => {
       customerPhone: uniquePhone(),
       title: "اختبار صلاحية اعتماد المصنع",
     });
-    await quoteAndConvertToJob(page, "900", "ألمنيوم — اختبار صلاحيات");
+    await quoteAndSignQuote(page, "900", "ألمنيوم — اختبار صلاحيات");
+
+    // Installer assignment stays manual and independent of the new
+    // auto-convert/auto-send cascade (per this feature's own design) — it
+    // still works exactly as before on a job that's already in_production.
     await page.click('button:has-text("تعيين فني")');
     const assignDialog = page.locator('[role="dialog"]');
     await assignDialog.locator("#userId").click();
@@ -166,12 +195,7 @@ test.describe("factory production approval", () => {
     await assignDialog.locator('button:has-text("تعيين"):not(:has-text("فني"))').click();
     await page.waitForTimeout(500);
 
-    await page.click('button:has-text("إرسال إلى المصنع")');
-    const sendDialog = page.locator('[role="dialog"]');
-    await sendDialog.locator('button:has-text("إرسال إلى المصنع")').click();
-    await page.waitForSelector("text=تم إنشاء طلب الإنتاج", { timeout: 10_000 });
-    const factoryLink = await sendDialog.locator("input[readonly]").inputValue();
-    await sendDialog.locator('button:has-text("تم")').click();
+    const factoryLink = await readAutoFactoryLink(page);
 
     const factoryCtx = await page.context().browser()!.newContext({ locale: "ar" });
     const factoryPage = await factoryCtx.newPage();

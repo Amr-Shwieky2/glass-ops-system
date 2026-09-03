@@ -175,18 +175,32 @@ test.describe("Ahmad end-to-end scenario (spec section 72)", () => {
     await customerPage.waitForSelector("text=تم توقيع عرض السعر", { timeout: 10_000 });
     await customerCtx.close();
 
+    // The customer's own signature above already ran the auto-convert-to-
+    // job + auto-send-to-factory cascade (src/server/quotes/actions.ts's
+    // runPostSignAutomation, run as best-effort automation right after the
+    // signature transaction commits) — there is no manual "تحويل العرض إلى
+    // مهمة" click any more; the button is gone because its step already
+    // happened, and by the time we reload here the job has already been
+    // converted (items + the 12,000 total) AND already sent to the
+    // factory, so the status has already advanced straight past
+    // waiting_for_production to in_production (asserted with the factory
+    // request itself, in step 5 below).
     await page.goto(job.href, { waitUntil: "networkidle" });
-    await page.click('button:has-text("تحويل العرض إلى مهمة")');
-    await page.locator('[role="alertdialog"] button:has-text("تحويل"):not(:has-text("العرض"))').click();
-    await page.waitForTimeout(800);
+    await expect(page.locator('button:has-text("تحويل العرض إلى مهمة")')).toHaveCount(0);
     text = await page.innerText("body");
-    expect(text).toContain("بانتظار الإنتاج"); // waiting_for_production
     expect(moneyPattern("12000.00").test(text)).toBe(true);
 
     const { rows: afterConvert } = await db.query(
       `select deal_closed_by_user_id from jobs where id = $1`,
       [job.jobId],
     );
+    // Mohammad is both who built/sent this quote (quotes.createdByUserId,
+    // set in step 3 above) and who would have clicked the old manual
+    // button — the automation resolves dealClosedByUserId to the quote's
+    // createdByUserId (this feature's documented design), which lands on
+    // the exact same user here, so this assertion — the hard prerequisite
+    // for the commission step below — is unchanged from the old
+    // manual-click version.
     expect(afterConvert[0].deal_closed_by_user_id).toBe(mohammadId);
 
     // -----------------------------------------------------------------
@@ -210,17 +224,19 @@ test.describe("Ahmad end-to-end scenario (spec section 72)", () => {
     expect((await cashBalance(db, mohammadCash)) - mohammadCashBeforeDeposit).toBe(3000);
 
     // -----------------------------------------------------------------
-    // 5. Production request -> factory submits 3,200 -> Mohammad approves
-    // -> job cost becomes an approved 3,200.00 factory_glass row.
+    // 5. The production request already exists — auto-created by the same
+    // signing cascade as step 3, no manual "إرسال إلى المصنع" click needed
+    // (that button is gone; its step already happened). Factory submits
+    // 3,200 -> Mohammad approves -> job cost becomes an approved 3,200.00
+    // factory_glass row.
     // -----------------------------------------------------------------
-    await page.click('button:has-text("إرسال إلى المصنع")');
-    dialog = page.locator('[role="dialog"]');
-    await dialog.locator('button:has-text("إرسال إلى المصنع")').click();
-    await page.waitForSelector("text=تم إنشاء طلب الإنتاج", { timeout: 10_000 });
-    const factoryLink = await dialog.locator("input[readonly]").inputValue();
-    await dialog.locator('button:has-text("تم")').click();
-    await page.waitForTimeout(300);
     expect(await jobStatusKey(db, job.jobId)).toBe("in_production");
+    await expect(page.locator('button:has-text("إرسال إلى المصنع")')).toHaveCount(0);
+    await page.click('button:has-text("رابط المصنع")');
+    dialog = page.locator('[role="dialog"]');
+    const factoryLink = await dialog.locator("input[readonly]").inputValue();
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(300);
 
     const factoryCtx = await browser.newContext({ locale: "ar" });
     const factoryPage = await factoryCtx.newPage();

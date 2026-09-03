@@ -22,7 +22,16 @@ import {
  * from the doc's prose.
  */
 
-async function quoteAndConvertToJob(
+/**
+ * Signs a quote via its real public link — the customer's own signature now
+ * runs the auto-convert-to-job + auto-send-to-factory cascade right after
+ * the signature transaction commits (see src/server/quotes/actions.ts's
+ * runPostSignAutomation), so there is no manual "تحويل العرض إلى مهمة"
+ * click here any more: by the time this returns, the job is already
+ * converted (its items/price already set from the quote). This test only
+ * needs a real, priced job to record payments against, not the factory step.
+ */
+async function quoteAndSignQuote(
   page: import("@playwright/test").Page,
   price: string,
 ) {
@@ -50,9 +59,7 @@ async function quoteAndConvertToJob(
   await customerCtx.close();
 
   await page.reload({ waitUntil: "networkidle" });
-  await page.click('button:has-text("تحويل العرض إلى مهمة")');
-  await page.locator('[role="alertdialog"] button:has-text("تحويل"):not(:has-text("العرض"))').click();
-  await page.waitForTimeout(800);
+  await expect(page.locator('button:has-text("تحويل العرض إلى مهمة")')).toHaveCount(0);
 }
 
 test.describe("payment status + approval", () => {
@@ -67,7 +74,7 @@ test.describe("payment status + approval", () => {
       customerPhone: uniquePhone(),
       title: "اختبار حالة الدفع",
     });
-    await quoteAndConvertToJob(page, "1000");
+    await quoteAndSignQuote(page, "1000");
     let text = await page.innerText("body");
     expect(moneyPattern("1000.00").test(text)).toBe(true); // sale total
 

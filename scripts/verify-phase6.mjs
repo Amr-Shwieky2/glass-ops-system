@@ -98,31 +98,35 @@ async function main() {
     await customerPage.waitForSelector("text=تم توقيع عرض السعر", { timeout: 10000 });
     await customerCtx.close();
 
+    // The customer's own signature (above) already ran the auto-convert +
+    // auto-send-to-factory cascade — no manual "تحويل العرض إلى مهمة" /
+    // "إرسال إلى المصنع" click needed or even possible here (both buttons
+    // are gone once their step is already done). This replaces what used
+    // to be Part A's own manual convert+send steps; the manual dialogs
+    // themselves (prefill-from-items, link reveal) still get real coverage
+    // below via Nabil's job in Part B, which reaches the factory purely by
+    // the manual route (no quote involved).
     await page.goto(`${BASE_URL}${saraHref}`, { waitUntil: "networkidle" });
-    await page.click('button:has-text("تحويل العرض إلى مهمة")');
-    await page.click('[role="alertdialog"] button:has-text("تحويل"):not(:has-text("العرض"))');
-    await page.waitForTimeout(800);
     let text = await page.innerText("body");
-    check("Sara's job converted, now waiting for production", text.includes("بانتظار الإنتاج"));
-    check("production section shows empty state", text.includes("لم يُرسل هذا العمل إلى المصنع بعد"));
+    check(
+      "no manual convert/send buttons (auto-convert + auto-send already ran on signing)",
+      !text.includes("تحويل العرض إلى مهمة") && !text.includes("إرسال إلى المصنع"),
+    );
+    check("job status auto-advanced straight to in_production", text.includes("قيد الإنتاج"));
+    check("production status shows pending", text.includes("بانتظار إرسال المصنع"));
+    check(
+      "auto-created production request details mention the job's item",
+      text.includes("زجاج شرفة"),
+    );
+    check("show-link button present", text.includes("رابط المصنع"));
 
-    console.log("1. Send Sara's job to the factory...");
-    await page.click('button:has-text("إرسال إلى المصنع")');
+    console.log("1. Fetch the auto-created factory link (issued by the automation)...");
+    await page.click('button:has-text("رابط المصنع")');
     dialog = page.locator('[role="dialog"]');
-    const prefill = await dialog.locator("#details").inputValue();
-    check("details prefilled from job item", prefill.includes("زجاج شرفة"));
-    await dialog.locator('button:has-text("إرسال إلى المصنع")').click();
-    await page.waitForSelector("text=تم إنشاء طلب الإنتاج", { timeout: 10000 });
     saraFactoryLink = await dialog.locator("input[readonly]").inputValue();
     check("factory public link generated", /\/public\/pr\//.test(saraFactoryLink));
-    await dialog.locator('button:has-text("تم")').click();
+    await page.keyboard.press("Escape");
     await page.waitForTimeout(300);
-
-    text = await page.innerText("body");
-    check("job status advanced to in_production", text.includes("قيد الإنتاج"));
-    check("production status shows pending", text.includes("بانتظار إرسال المصنع"));
-    check("Send-to-factory button gone", !text.includes("إرسال إلى المصنع"));
-    check("show-link button present", text.includes("رابط المصنع"));
 
     console.log("2. Factory visits the link and submits a price...");
     const factoryCtx = await browser.newContext({ locale: "ar" });

@@ -26,7 +26,17 @@ import {
  * pipeline just to reach the same job_statuses row.
  */
 
-async function quoteAndConvertToJob(page: import("@playwright/test").Page, price: string) {
+/**
+ * Signs a quote via its real public link — the customer's own signature now
+ * runs the auto-convert-to-job + auto-send-to-factory cascade right after
+ * the signature transaction commits (see src/server/quotes/actions.ts's
+ * runPostSignAutomation), so there is no manual "تحويل العرض إلى مهمة"
+ * click here any more: by the time this returns, the job is already
+ * converted (its items/price already set from the quote). Neither repair
+ * test below cares about the factory step itself, only that the job is a
+ * real, priced, non-terminal job to report a repair against.
+ */
+async function quoteAndSignQuote(page: import("@playwright/test").Page, price: string) {
   await page.click('button:has-text("إنشاء عرض سعر")');
   const dialog = page.locator('[role="dialog"]');
   await dialog.locator('input[placeholder="الوصف"]').fill("بند اختبار إصلاح");
@@ -51,9 +61,7 @@ async function quoteAndConvertToJob(page: import("@playwright/test").Page, price
   await customerCtx.close();
 
   await page.reload({ waitUntil: "networkidle" });
-  await page.click('button:has-text("تحويل العرض إلى مهمة")');
-  await page.locator('[role="alertdialog"] button:has-text("تحويل"):not(:has-text("العرض"))').click();
-  await page.waitForTimeout(800);
+  await expect(page.locator('button:has-text("تحويل العرض إلى مهمة")')).toHaveCount(0);
 }
 
 test.describe("repair status transitions", () => {
@@ -68,7 +76,7 @@ test.describe("repair status transitions", () => {
       customerPhone: uniquePhone(),
       title: "اختبار حالات الإصلاح",
     });
-    await quoteAndConvertToJob(page, "300");
+    await quoteAndSignQuote(page, "300");
 
     await page.click('button:has-text("الإبلاغ عن مشكلة")');
     const problemLabel = uniqueLabel("خدش على الزجاج");
@@ -147,7 +155,7 @@ test.describe("closeJobAction gating", () => {
       customerPhone: uniquePhone(),
       title: "اختبار إغلاق المهمة",
     });
-    await quoteAndConvertToJob(page, "400");
+    await quoteAndSignQuote(page, "400");
 
     await page.click('button:has-text("الإبلاغ عن مشكلة")');
     const dialog = page.locator('[role="dialog"]');
