@@ -355,11 +355,11 @@ export async function markAppointmentArrivedAction(
 // ---------------------------------------------------------------------
 // "رفع ملاحظة" (My Day, technician-facing) — a lightweight text-only field
 // note appended to the job (section 5's `jobs.notes`). jobs.notes is a
-// single freeform column already overwritten wholesale elsewhere (see
-// cancelJob in src/server/jobs/actions.ts, which sets it to the
-// cancellation reason) rather than treated as a running log anywhere in
-// this codebase — so a second technician's note must never be lost to a
-// stale read-then-write. Rather than stand up a new dedicated table for
+// single freeform column with no other running-history mechanism, so a
+// second technician's note must never be lost to a stale read-then-write
+// (cancelJob in src/server/jobs/actions.ts appends its cancellation
+// reason via this same pattern, rather than overwriting, for the same
+// reason). Rather than stand up a new dedicated table for
 // one field's worth of running history (real, but out of proportion to
 // "one tap, minimal fields, doesn't lose prior notes"), this appends via a
 // single atomic UPDATE ... SET notes = concat_ws(...) expression evaluated

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import {
   jobs,
@@ -21,6 +21,7 @@ import { notifyUser } from "@/server/notifications";
 import { nextDocumentNumber } from "@/server/numbering";
 import { isPlausiblePhone, normalizePhone } from "@/server/tokens";
 import { parseNonNegativeMoneyInput } from "@/server/money";
+import { COMPANY_TIMEZONE } from "@/lib/company-day";
 
 export interface ActionState {
   error?: string;
@@ -435,10 +436,29 @@ export async function removeAssignment(
   return { success: true };
 }
 
+const cancelNoteTimestampFmt = new Intl.DateTimeFormat("ar", {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  numberingSystem: "latn",
+  timeZone: COMPANY_TIMEZONE,
+});
+
 // ---------------------------------------------------------------------
 // Cancel job — the one manual status transition exposed directly, gated
 // tightly; every other status change is a side effect of a real workflow
 // action (measure/quote/produce/install), never a free-form dropdown.
+//
+// The cancellation reason is APPENDED to jobs.notes (same atomic
+// concat_ws pattern as addFieldNoteAction in
+// src/server/appointments/actions.ts), never a wholesale overwrite — a
+// prior cancelJob revision blindly set notes: reason, which silently
+// destroyed every timestamped field note a technician had logged for the
+// job the instant it was cancelled. jobs.notes is a single freeform
+// column with no other running-history mechanism, so preserving prior
+// content here is the only way that history survives.
 // ---------------------------------------------------------------------
 export async function cancelJob(
   jobId: string,
@@ -458,13 +478,20 @@ export async function cancelJob(
     .limit(1);
   if (!cancelledStatus) return { error: "تعذر تحديد حالة الإلغاء" };
 
+  const now = new Date();
+  const cancelEntry = reason
+    ? `[${cancelNoteTimestampFmt.format(now)}] ${user!.name} (إلغاء المهمة): ${reason}`
+    : undefined;
+
   await db
     .update(jobs)
     .set({
       statusId: cancelledStatus.id,
-      notes: reason,
-      closedAt: new Date(),
-      updatedAt: new Date(),
+      ...(cancelEntry
+        ? { notes: sql`concat_ws(E'\n\n', ${jobs.notes}, ${cancelEntry}::text)` }
+        : {}),
+      closedAt: now,
+      updatedAt: now,
     })
     .where(eq(jobs.id, jobId));
 
