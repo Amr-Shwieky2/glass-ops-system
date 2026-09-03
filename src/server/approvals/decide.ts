@@ -30,7 +30,8 @@ export async function createApprovalRequest(
       | "customer_payment"
       | "technician_ledger_entry"
       | "factory_submission"
-      | "job_cost";
+      | "job_cost"
+      | "cash_expense_report";
     entityId: string;
     requestedByUserId: string;
     summary: string;

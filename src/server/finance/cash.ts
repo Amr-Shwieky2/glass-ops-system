@@ -59,3 +59,35 @@ export async function creditCashAccount(
     createdByUserId: params.createdByUserId,
   });
 }
+
+/**
+ * Posts an 'out' row to a cash account — the debit counterpart to
+ * creditCashAccount, added for field-expense reports (src/server/finance/
+ * expense-actions.ts). Takes cashAccountId directly rather than userId:
+ * unlike a credit (whose source row only ever carries the receiving
+ * user's id), a cash_expense_reports row already stores the account it
+ * was reported against, and that account is guaranteed to already exist
+ * (it was created, lazily, by getOrCreateCashAccountForUser at report
+ * time) — so there is nothing to get-or-create here.
+ */
+export async function debitCashAccount(
+  tx: Database,
+  params: {
+    cashAccountId: string;
+    amount: Money;
+    sourceType: string;
+    sourceId: string;
+    notes?: string;
+    createdByUserId: string;
+  },
+): Promise<void> {
+  await tx.insert(cashTransactions).values({
+    cashAccountId: params.cashAccountId,
+    direction: "out",
+    amount: params.amount,
+    sourceType: params.sourceType,
+    sourceId: params.sourceId,
+    notes: params.notes,
+    createdByUserId: params.createdByUserId,
+  });
+}

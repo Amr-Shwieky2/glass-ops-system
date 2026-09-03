@@ -193,6 +193,45 @@ export const cashTransfers = pgTable("cash_transfers", {
     .defaultNow(),
 });
 
+/**
+ * A technician self-reporting a field expense (fuel, tolls, materials
+ * bought on-site, etc.) paid out of cash they are personally holding —
+ * the debit-side counterpart to cash_transfers' "hand cash back" flow.
+ * Same "create pending, approve posts the real transaction" pattern as
+ * cashTransfers/customerPayments/jobCosts: this row alone never moves any
+ * balance — only decideFieldExpenseAction (src/server/finance/
+ * expense-actions.ts), on approval, posts the matching direction='out'
+ * cash_transactions row (sourceType='field_expense', sourceId=this row's
+ * id) in the same transaction as the guarded status update.
+ */
+export const cashExpenseReports = pgTable(
+  "cash_expense_reports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    cashAccountId: uuid("cash_account_id")
+      .notNull()
+      .references(() => cashAccounts.id, { onDelete: "restrict" }),
+    amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+    description: text("description").notNull(),
+    reportedByUserId: uuid("reported_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    status: approvalStatusEnum("status").notNull().default("pending"),
+    decidedByUserId: uuid("decided_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    rejectionReason: text("rejection_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("cash_expense_reports_account_idx").on(t.cashAccountId),
+    index("cash_expense_reports_status_idx").on(t.status),
+  ],
+);
+
 /** Checks received from customers (section 37). */
 export const incomingChecks = pgTable(
   "incoming_checks",

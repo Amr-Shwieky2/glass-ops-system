@@ -143,4 +143,5 @@ export const approvableEntityTypeEnum = pgEnum("approvable_entity_type", [
   "technician_ledger_entry",
   "factory_submission",
   "job_cost",
+  "cash_expense_report",
 ]);

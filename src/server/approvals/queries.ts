@@ -1,13 +1,20 @@
 import "server-only";
 import { desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/server/db/client";
-import { approvalRequests, jobs, technicianLedgerEntries, users } from "@/server/db/schema";
+import {
+  approvalRequests,
+  jobs,
+  technicianLedgerEntries,
+  cashExpenseReports,
+  users,
+} from "@/server/db/schema";
 
 export type ApprovalEntityType =
   | "customer_payment"
   | "technician_ledger_entry"
   | "factory_submission"
-  | "job_cost";
+  | "job_cost"
+  | "cash_expense_report";
 
 /**
  * One row of the unified approval queue (section 61/59) — a READ-ONLY
@@ -45,6 +52,10 @@ export interface ApprovalQueueRow {
  *  - technician_ledger_entry: controls live on the technician's own ledger
  *    page ("/finance/technicians/<userId>"), which is NOT the requester —
  *    it's the ledger entry's owning userId, so a second lookup resolves it.
+ *  - cash_expense_report: controls live on the same technician ledger
+ *    page's cash-drawer section, keyed by reportedByUserId — resolved the
+ *    same way as technician_ledger_entry above (a second lookup, since
+ *    that id isn't on the approval_requests row itself).
  */
 export async function getPendingApprovalRequests(): Promise<ApprovalQueueRow[]> {
   const rows = await db
@@ -80,15 +91,31 @@ export async function getPendingApprovalRequests(): Promise<ApprovalQueueRow[]> 
     }
   }
 
+  const expenseReportIds = rows
+    .filter((r) => r.entityType === "cash_expense_report")
+    .map((r) => r.entityId);
+
+  const expenseReporterByReportId = new Map<string, string>();
+  if (expenseReportIds.length > 0) {
+    const reports = await db
+      .select({ id: cashExpenseReports.id, reportedByUserId: cashExpenseReports.reportedByUserId })
+      .from(cashExpenseReports)
+      .where(inArray(cashExpenseReports.id, expenseReportIds));
+    for (const report of reports) {
+      expenseReporterByReportId.set(report.id, report.reportedByUserId);
+    }
+  }
+
   return rows.map((row) => ({
     ...row,
-    viewHref: buildViewHref(row, ledgerOwnerByEntryId),
+    viewHref: buildViewHref(row, ledgerOwnerByEntryId, expenseReporterByReportId),
   }));
 }
 
 function buildViewHref(
   row: { entityType: ApprovalEntityType; entityId: string; relatedJobId: string | null },
   ledgerOwnerByEntryId: Map<string, string>,
+  expenseReporterByReportId: Map<string, string>,
 ): string {
   switch (row.entityType) {
     case "customer_payment":
@@ -101,6 +128,10 @@ function buildViewHref(
     case "technician_ledger_entry": {
       const ownerId = ledgerOwnerByEntryId.get(row.entityId);
       return ownerId ? `/finance/technicians/${ownerId}` : "/finance/technicians";
+    }
+    case "cash_expense_report": {
+      const reporterId = expenseReporterByReportId.get(row.entityId);
+      return reporterId ? `/finance/technicians/${reporterId}` : "/finance/technicians";
     }
   }
 }

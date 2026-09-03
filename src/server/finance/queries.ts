@@ -1,6 +1,6 @@
 import "server-only";
 import { and, desc, eq, gte, lte } from "drizzle-orm";
-import { cashAccounts, cashTransactions, users } from "@/server/db/schema";
+import { cashAccounts, cashTransactions, cashExpenseReports, users } from "@/server/db/schema";
 import { db } from "@/server/db/client";
 import { sumMoney, subtractMoney, type Money } from "@/server/money";
 
@@ -150,4 +150,43 @@ export async function getCashAccountIdForUser(userId: string): Promise<string | 
     .where(eq(cashAccounts.ownerUserId, userId))
     .limit(1);
   return account?.id ?? null;
+}
+
+export interface PendingFieldExpense {
+  id: string;
+  cashAccountId: string;
+  amount: Money;
+  description: string;
+  reportedByUserId: string;
+  reportedByName: string;
+  createdAt: Date;
+}
+
+/**
+ * Pending field-expense reports (src/server/finance/expense-actions.ts),
+ * newest first, optionally scoped to one cash account — the cash-drawer
+ * page only ever shows the account being viewed. A read-only index, same
+ * spirit as getPendingApprovalRequests: never approves/rejects anything,
+ * the real decision controls live behind decideFieldExpenseAction.
+ */
+export async function getPendingFieldExpenses(
+  cashAccountId?: string,
+): Promise<PendingFieldExpense[]> {
+  const conditions = [eq(cashExpenseReports.status, "pending")];
+  if (cashAccountId) conditions.push(eq(cashExpenseReports.cashAccountId, cashAccountId));
+
+  return db
+    .select({
+      id: cashExpenseReports.id,
+      cashAccountId: cashExpenseReports.cashAccountId,
+      amount: cashExpenseReports.amount,
+      description: cashExpenseReports.description,
+      reportedByUserId: cashExpenseReports.reportedByUserId,
+      reportedByName: users.name,
+      createdAt: cashExpenseReports.createdAt,
+    })
+    .from(cashExpenseReports)
+    .innerJoin(users, eq(cashExpenseReports.reportedByUserId, users.id))
+    .where(and(...conditions))
+    .orderBy(desc(cashExpenseReports.createdAt));
 }

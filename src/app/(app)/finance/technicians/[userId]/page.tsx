@@ -14,6 +14,7 @@ import {
   getCashAccountBalanceForUser,
   getCashAccountIdForUser,
   getCashTransactionHistory,
+  getPendingFieldExpenses,
 } from "@/server/finance/queries";
 import { getSetting } from "@/server/settings";
 import { formatILS, isNegative, isPositive } from "@/server/money";
@@ -36,6 +37,8 @@ import { cn } from "@/lib/utils";
 import { ReportPaymentDialog } from "../report-payment-dialog";
 import { LedgerDecisionButtons } from "../ledger-decision-buttons";
 import { VehicleDeductionDialog, BonusDialog, PenaltyDialog, DailyWageDialog } from "../quick-action-dialogs";
+import { ReportFieldExpenseDialog } from "../report-field-expense-dialog";
+import { FieldExpenseDecisionButtons } from "../field-expense-decision-buttons";
 import { DirectionFilterSelect } from "./direction-filter-select";
 
 export async function generateMetadata({
@@ -99,6 +102,7 @@ const CASH_SOURCE_TYPE_LABEL_AR: Record<string, string> = {
   customer_payment: "تحصيل من عميل",
   transfer: "تحويل نقدي",
   adjustment: "تسوية",
+  field_expense: "مصروف ميداني",
 };
 
 const CASH_DIRECTIONS = new Set(["in", "out"]);
@@ -144,13 +148,16 @@ export default async function TechnicianLedgerPage({
       getCashAccountIdForUser(userId),
     ]);
 
-  const cashTransactions = cashAccountId
-    ? await getCashTransactionHistory(cashAccountId, {
-        dateFrom: cashDateFrom && !Number.isNaN(cashDateFrom.getTime()) ? cashDateFrom : undefined,
-        dateTo: cashDateTo && !Number.isNaN(cashDateTo.getTime()) ? cashDateTo : undefined,
-        direction: cashDirection,
-      })
-    : [];
+  const [cashTransactions, pendingFieldExpenses] = await Promise.all([
+    cashAccountId
+      ? getCashTransactionHistory(cashAccountId, {
+          dateFrom: cashDateFrom && !Number.isNaN(cashDateFrom.getTime()) ? cashDateFrom : undefined,
+          dateTo: cashDateTo && !Number.isNaN(cashDateTo.getTime()) ? cashDateTo : undefined,
+          direction: cashDirection,
+        })
+      : Promise.resolve([]),
+    canManage && cashAccountId ? getPendingFieldExpenses(cashAccountId) : Promise.resolve([]),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -260,17 +267,49 @@ export default async function TechnicianLedgerPage({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="flex size-12 items-center justify-center rounded-full bg-muted">
-              <Banknote className="size-6 text-muted-foreground" />
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+                <Banknote className="size-6 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">رصيد الصندوق الحالي</p>
+                <p dir="ltr" className="text-2xl font-bold text-foreground">
+                  {formatILS(cashBalance)}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-sm text-muted-foreground">رصيد الصندوق الحالي</p>
-              <p dir="ltr" className="text-2xl font-bold text-foreground">
-                {formatILS(cashBalance)}
-              </p>
-            </div>
+            {isOwnPage && <ReportFieldExpenseDialog />}
           </div>
+
+          {canManage && pendingFieldExpenses.length > 0 && (
+            <div className="space-y-2 rounded-md border p-4">
+              <p className="text-sm font-medium text-foreground">
+                مصاريف ميدانية بانتظار الاعتماد
+              </p>
+              <ul className="divide-y">
+                {pendingFieldExpenses.map((expense) => (
+                  <li key={expense.id} className="space-y-2 py-3 first:pt-0 last:pb-0">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span dir="ltr" className="font-medium text-foreground">
+                            {formatILS(expense.amount)}
+                          </span>
+                          <Badge variant="warning">بانتظار الاعتماد</Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {dateFmt.format(expense.createdAt)} · بواسطة {expense.reportedByName}
+                        </p>
+                        <p className="text-sm text-muted-foreground">{expense.description}</p>
+                      </div>
+                    </div>
+                    <FieldExpenseDecisionButtons reportId={expense.id} amount={expense.amount} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <form method="GET" className="flex flex-wrap items-end gap-2">
             <DirectionFilterSelect defaultValue={cashFilters.direction} />

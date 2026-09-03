@@ -28,6 +28,7 @@ const ENTITY_TYPE_LABEL_AR: Record<ApprovalEntityType, string> = {
   technician_ledger_entry: "قيد حساب فني",
   factory_submission: "سعر مصنع",
   job_cost: "تكلفة مهمة",
+  cash_expense_report: "مصروف ميداني",
 };
 
 const dateTimeFmt = new Intl.DateTimeFormat("ar", {

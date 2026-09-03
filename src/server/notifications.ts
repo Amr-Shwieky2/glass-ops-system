@@ -1,7 +1,7 @@
 import "server-only";
 import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/server/db/client";
-import { notifications, technicianLedgerEntries } from "@/server/db/schema";
+import { notifications, technicianLedgerEntries, cashExpenseReports } from "@/server/db/schema";
 import type { Database } from "@/server/db/client";
 
 export interface ActionState {
@@ -24,14 +24,16 @@ export interface Notification {
    * Where clicking this notification should navigate, resolved server-side
    * per relatedEntityType — the bell (a Client Component) has no DB access
    * of its own to work this out. Mirrors
-   * src/server/approvals/queries.ts's buildViewHref for the same three
-   * entity types that notifyUser()/notifyUsers() are ever called with
-   * (grep relatedEntityType across src/server for the exhaustive list):
-   * "job" -> the job page; "technician_ledger_entry" -> the entry's OWNING
-   * user's ledger page (not the requester, not the current viewer — looked
-   * up the same way approvals/queries.ts does it); "cash_transfer" -> the
-   * shared cash screen (no per-transfer page exists). null when there is
-   * nowhere to navigate (or the entity type is unrecognized).
+   * src/server/approvals/queries.ts's buildViewHref for the same entity
+   * types that notifyUser()/notifyUsers() are ever called with (grep
+   * relatedEntityType across src/server for the exhaustive list): "job" ->
+   * the job page; "technician_ledger_entry" -> the entry's OWNING user's
+   * ledger page (not the requester, not the current viewer — looked up the
+   * same way approvals/queries.ts does it); "cash_transfer" -> the shared
+   * cash screen (no per-transfer page exists); "cash_expense_report" ->
+   * the report's OWNING (reportedByUserId) user's ledger page, same
+   * lookup-by-second-query shape as technician_ledger_entry. null when
+   * there is nowhere to navigate (or the entity type is unrecognized).
    */
   href: string | null;
 }
@@ -110,15 +112,31 @@ export async function getNotificationsForUser(
     }
   }
 
+  const expenseReportIds = rows
+    .filter((r) => r.relatedEntityType === "cash_expense_report" && r.relatedEntityId)
+    .map((r) => r.relatedEntityId as string);
+
+  const expenseReporterByReportId = new Map<string, string>();
+  if (expenseReportIds.length > 0) {
+    const reports = await db
+      .select({ id: cashExpenseReports.id, reportedByUserId: cashExpenseReports.reportedByUserId })
+      .from(cashExpenseReports)
+      .where(inArray(cashExpenseReports.id, expenseReportIds));
+    for (const report of reports) {
+      expenseReporterByReportId.set(report.id, report.reportedByUserId);
+    }
+  }
+
   return rows.map((row) => ({
     ...row,
-    href: resolveNotificationHref(row, ledgerOwnerByEntryId),
+    href: resolveNotificationHref(row, ledgerOwnerByEntryId, expenseReporterByReportId),
   }));
 }
 
 function resolveNotificationHref(
   row: { relatedEntityType: string | null; relatedEntityId: string | null },
   ledgerOwnerByEntryId: Map<string, string>,
+  expenseReporterByReportId: Map<string, string>,
 ): string | null {
   if (!row.relatedEntityType || !row.relatedEntityId) return null;
   switch (row.relatedEntityType) {
@@ -127,6 +145,10 @@ function resolveNotificationHref(
     case "technician_ledger_entry": {
       const ownerId = ledgerOwnerByEntryId.get(row.relatedEntityId);
       return ownerId ? `/finance/technicians/${ownerId}` : "/finance/technicians";
+    }
+    case "cash_expense_report": {
+      const reporterId = expenseReporterByReportId.get(row.relatedEntityId);
+      return reporterId ? `/finance/technicians/${reporterId}` : "/finance/technicians";
     }
     case "cash_transfer":
       return "/finance/cash";
