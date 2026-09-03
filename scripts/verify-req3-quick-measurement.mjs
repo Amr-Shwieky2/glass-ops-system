@@ -120,9 +120,16 @@ function replaceMultipartFilePart(
     const headerEnd = segment.indexOf(CRLFCRLF);
     if (headerEnd === -1) continue;
     const headerStr = segment.subarray(0, headerEnd).toString("latin1");
-    if (!headerStr.includes(`name="${fieldName}"`)) continue;
+    // React's Server Actions wire protocol prefixes every field name with a
+    // per-form id (e.g. "files" is actually sent as "_1_files") so multiple
+    // forms/action instances on a page don't collide — match by suffix, not
+    // exact name, and reuse whatever the real captured name was so the
+    // server's own prefix-stripping still resolves it to "files".
+    const nameMatch = headerStr.match(new RegExp(`name="([^"]*${fieldName})"`));
+    if (!nameMatch || !headerStr.includes("filename=")) continue;
+    const actualFieldName = nameMatch[1];
 
-    const newDisposition = `Content-Disposition: form-data; name="${fieldName}"; filename="${newFileName}"`;
+    const newDisposition = `Content-Disposition: form-data; name="${actualFieldName}"; filename="${newFileName}"`;
     const newHeaderStr = `${boundaryMarker.toString("latin1")}\r\n${newDisposition}\r\nContent-Type: ${newMimeType}`;
     const before = originalBuffer.subarray(0, segStart);
     const after = originalBuffer.subarray(segEnd);

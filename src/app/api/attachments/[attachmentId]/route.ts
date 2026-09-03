@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { measurementAttachments, measurements } from "@/server/db/schema";
 import { getCurrentUser } from "@/server/auth/session";
-import { can } from "@/server/auth/permissions";
+import { can, canAny } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
 import { getJobDetail } from "@/server/jobs/queries";
 import { readMeasurementAttachment } from "@/server/storage/attachments";
@@ -26,6 +26,13 @@ export async function GET(
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "يجب تسجيل الدخول." }, { status: 401 });
+  }
+  // Same baseline gate the job detail page itself requires before it even
+  // considers involvement — without it, a user holding neither view
+  // permission could otherwise reach an attachment for a job they'd be
+  // blocked from opening directly, just by being "involved" in it.
+  if (!canAny(user, [PERMISSIONS.VIEW_ALL_JOBS, PERMISSIONS.VIEW_ASSIGNED_JOBS])) {
+    return NextResponse.json({ error: "لا تملك صلاحية الوصول." }, { status: 403 });
   }
 
   const rows = await db
