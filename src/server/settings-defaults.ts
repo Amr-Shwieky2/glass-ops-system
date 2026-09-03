@@ -33,7 +33,7 @@ export const SETTINGS_DEFAULTS: SettingsSchema = {
   quote_validity_days: 14,
   vehicle_usage_deduction_default: "300.00",
   company_info: {
-    name: "Glass Co.",
+    name: "زجاج المدينة",
     address: "",
     phone: "",
     email: "",

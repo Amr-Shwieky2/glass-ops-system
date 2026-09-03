@@ -260,8 +260,8 @@ async function main() {
     .insert(schema.vehicles)
     .values([
       { name: "מרצדס / Mercedes", plateNumber: "12-345-67", fuelType: "diesel", defaultResponsibleUserId: issam.id, estimatedValue: "120000.00" },
-      { name: "فان ترانزيت / Transit Van", plateNumber: "98-765-43", fuelType: "diesel", defaultResponsibleUserId: mohammad.id, estimatedValue: "80000.00" },
-      { name: "فان التوصيل / Delivery Van", plateNumber: "34-567-89", fuelType: "petrol", defaultResponsibleUserId: basel.id, estimatedValue: "55000.00" },
+      { name: "فان ترانزيت", plateNumber: "98-765-43", fuelType: "diesel", defaultResponsibleUserId: mohammad.id, estimatedValue: "80000.00" },
+      { name: "فان التوصيل", plateNumber: "34-567-89", fuelType: "petrol", defaultResponsibleUserId: basel.id, estimatedValue: "55000.00" },
     ])
     .returning();
   await db.insert(schema.vehicleResponsibilityHistory).values([
@@ -762,7 +762,7 @@ async function main() {
   });
   await db.insert(schema.incomingChecks).values({
     customerId: nabil.id, jobId: nabilJob.id, amount: "2000.00", checkNumber: "00458219",
-    bank: "בנק לאומי / Bank Leumi", dueDate: dateOnly(daysFromNow(2)), receivedByUserId: mohammad.id,
+    bank: "بنك لئومي", dueDate: dateOnly(daysFromNow(2)), receivedByUserId: mohammad.id,
     status: "future", notes: "القسط الثاني، شيك مؤجل عند التوقيع.",
   });
 
@@ -885,10 +885,10 @@ async function main() {
 
   console.log("Seeding external contractor + outgoing check (for screen coverage)...");
   await db.insert(schema.externalContractors).values({
-    name: "أبو علي للألمنيوم / Abu Ali Aluminum", phone: "+972506661234", serviceType: "تركيب ألمنيوم",
+    name: "أبو علي للألمنيوم", phone: "+972506661234", serviceType: "تركيب ألمنيوم",
   });
   await db.insert(schema.outgoingChecks).values({
-    payeeName: "شركة توريد الزجاج / Glass Supply Co.", amount: "4500.00", checkNumber: "77123", dueDate: dateOnly(daysFromNow(10)),
+    payeeName: "شركة توريد الزجاج", amount: "4500.00", checkNumber: "77123", dueDate: dateOnly(daysFromNow(10)),
     reason: "تجديد مخزون الزجاج الخام", status: "pending", createdByUserId: amr.id,
   });
 
@@ -949,7 +949,7 @@ async function main() {
   console.log("Seeding a second incoming check, further out (not due-soon)...");
   await db.insert(schema.incomingChecks).values({
     customerId: mona.id, jobId: monaJob.id, amount: "500.00", checkNumber: "00119873",
-    bank: "בנק הפועלים / Bank Hapoalim", dueDate: dateOnly(daysFromNow(20)), receivedByUserId: mohammad.id,
+    bank: "بنك هبوعليم", dueDate: dateOnly(daysFromNow(20)), receivedByUserId: mohammad.id,
     status: "future", notes: "دفعة مقدمة، شيك مؤجل.",
   });
 
