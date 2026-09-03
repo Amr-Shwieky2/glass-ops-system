@@ -982,6 +982,58 @@ async function main() {
     cashAccountId: mohammadCash.id, direction: "in", amount: "3000.00", sourceType: "customer_payment", sourceId: karimPayment.id, createdByUserId: mohammad.id, createdAt: daysAgo(2),
   });
 
+  // A second, separate quote thread on Karim's same job: Hebrew-language,
+  // AI-drafted (language="he", quote_versions.is_ai_generated=true, with a
+  // plausible ai_prompt_notes — the Arabic job description an admin would
+  // actually type into the "وصف الشغل" AI-draft box, since the drafted
+  // OUTPUT is Hebrew but the internal app UI/input stays Arabic per
+  // AGENTS.md), signed with Hebrew signing data. Deliberately left
+  // signed-but-NOT-converted (never calls convertQuoteToJob / touches
+  // jobs.quoteId or jobs.sourceQuoteVersionId) so Karim's own
+  // railing/payment scenario above — which scripts/verify-phase9.mjs reads
+  // — stays completely untouched; a real user could equally leave a signed
+  // quote unconverted. Gives the Hebrew PDF + public sign-page rendering
+  // and the AI-draft provenance columns real signed data to check without
+  // generating one live every time (see
+  // scripts/verify-req4-ai-hebrew-quote.mjs).
+  console.log("Seeding a Hebrew, AI-drafted demo quote on Karim's job...");
+  const [karimHeQuote] = await db.insert(schema.quotes).values({
+    quoteNumber: "Q-2026-0006", customerId: karim.id, jobId: karimJob.id, status: "signed",
+    language: "he", createdByUserId: mohammad.id, createdAt: daysAgo(3),
+  }).returning();
+  const [karimHeQuoteV1] = await db.insert(schema.quoteVersions).values({
+    quoteId: karimHeQuote.id, versionNumber: 1,
+    paymentTerms: "50% מקדמה בעת אישור ההצעה, היתרה עם סיום ההתקנה.",
+    workTerms: "אחריות של 24 חודשים על העבודה. משך ביצוע משוער: 5 ימי עבודה ממועד אישור ההזמנה.",
+    validUntil: dateOnly(daysAgo(3 - 14)),
+    subtotal: "4800.00", total: "4800.00", isSigned: true,
+    isAiGenerated: true,
+    aiPromptNotes: "تركيب درابزين زجاجي إضافي للشرفة الخلفية بطول 6 أمتار مع تثبيت قواعد ستانلس ستيل.",
+    createdByUserId: mohammad.id, createdAt: daysAgo(3),
+  }).returning();
+  await db.insert(schema.quoteItems).values([
+    { quoteVersionId: karimHeQuoteV1.id, workTypeId: workTypeByKey.glass_railing.id, description: "מעקה זכוכית למרפסת אחורית, זכוכית מחוסמת 10 מ\"מ", quantity: "6", unit: "מטר", unitPrice: "700.00", lineTotal: "4200.00", sortOrder: 0 },
+    { quoteVersionId: karimHeQuoteV1.id, description: "בסיסי נירוסטה לעיגון המעקה", quantity: "6", unit: "יחידה", unitPrice: "100.00", lineTotal: "600.00", sortOrder: 1 },
+  ]);
+  await db.insert(schema.quoteSignatures).values({
+    quoteVersionId: karimHeQuoteV1.id,
+    signedAt: daysAgo(2),
+    customerNameAtSigning: "כרים שאהין",
+    customerPhoneAtSigning: karim.phone,
+    // Reuses the SAME customer_national_id_at_signing column the Arabic
+    // flow uses (see quotes.ts's doc comment) — here holding an Israeli
+    // ת.ז-shaped value, exactly what the Hebrew signing form's relabeled
+    // "ת.ז / ח.פ" field collects. No schema change.
+    customerNationalIdAtSigning: "203456789",
+    customerAddressAtSigning: "רחוב א-רשידיה 12, נצרת",
+    agreedToTerms: true,
+    signatureImage: TINY_PNG,
+  });
+  await db
+    .update(schema.quotes)
+    .set({ currentVersionId: karimHeQuoteV1.id, signedVersionId: karimHeQuoteV1.id })
+    .where(sql`${schema.quotes.id} = ${karimHeQuote.id}`);
+
   // ---------------------------------------------------------------------
   // Job 8: ياسمين نمر — in production, with a factory price already
   // submitted and still sitting at status='submitted' (Phase 10b). None of
@@ -1153,7 +1205,7 @@ async function main() {
   console.log("Seeding number sequences (continuing on from the demo jobs/quotes above, which use hardcoded numbers rather than nextDocumentNumber())...");
   await db.insert(schema.numberSequences).values([
     { scope: "job", year: 2026, lastValue: 9 }, // JOB-2026-0001..0009 used above
-    { scope: "quote", year: 2026, lastValue: 5 }, // Q-2026-0001..0005 used above
+    { scope: "quote", year: 2026, lastValue: 6 }, // Q-2026-0001..0006 used above
   ]);
 
   console.log("Done.");

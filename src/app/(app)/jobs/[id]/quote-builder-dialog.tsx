@@ -82,6 +82,8 @@ export function QuoteBuilderDialog({
   initialWorkTerms,
   initialValidUntil,
   initialLanguage = "ar",
+  initialIsAiGenerated = false,
+  initialAiPromptNotes,
   triggerLabel,
   triggerVariant = "default",
   warnEditingSigned = false,
@@ -99,6 +101,12 @@ export function QuoteBuilderDialog({
   /** Defaults to "ar" so the normal manual-entry path (and every existing
    * caller of this component) is unaffected. */
   initialLanguage?: QuoteLanguage;
+  /** AI quote-drafting provenance to stamp on the version this save
+   * produces (quote_versions.is_ai_generated / .ai_prompt_notes) — set by
+   * the AI-draft trigger when it hands off a generated draft; every other
+   * caller omits these and gets a normal manually-authored version. */
+  initialIsAiGenerated?: boolean;
+  initialAiPromptNotes?: string;
   triggerLabel: string;
   triggerVariant?: "default" | "outline" | "secondary";
   warnEditingSigned?: boolean;
@@ -195,6 +203,10 @@ export function QuoteBuilderDialog({
           <input type="hidden" name="quoteId" value={quoteId ?? ""} />
           <input type="hidden" name="itemsJson" value={itemsJson} />
           <input type="hidden" name="language" value={language} />
+          {initialIsAiGenerated && <input type="hidden" name="isAiGenerated" value="true" />}
+          {initialAiPromptNotes && (
+            <input type="hidden" name="aiPromptNotes" value={initialAiPromptNotes} />
+          )}
 
           <div className="space-y-3">
             <Label>بنود العرض</Label>

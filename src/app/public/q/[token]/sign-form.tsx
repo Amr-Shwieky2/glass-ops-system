@@ -97,10 +97,18 @@ export function SignForm({
 
   // Fields prefilled from the customer record on the server AND, once
   // mounted, overlaid with any locally-remembered profile from a previous
-  // signing on this device — always left fully editable either way.
-  const [name, setName] = React.useState(defaultName);
-  const [phone, setPhone] = React.useState(defaultPhone);
-  const [idNumber, setIdNumber] = React.useState("");
+  // signing on this device — always left fully editable either way. Read
+  // via lazy useState initializers (each runs exactly once, at this
+  // component's first render) rather than a mount effect: on the server
+  // (and on this component's very first client render before hydration
+  // reconciles it) `window` doesn't exist, so readStoredProfile's own
+  // try/catch simply yields null and these fall back to the server-supplied
+  // defaults, same as before; this also sidesteps the extra post-mount
+  // render a setState-in-effect would cost (react-hooks/set-state-in-effect
+  // — same reasoning as src/lib/use-close-on-success.ts).
+  const [name, setName] = React.useState(() => readStoredProfile()?.name || defaultName);
+  const [phone, setPhone] = React.useState(() => readStoredProfile()?.phone || defaultPhone);
+  const [idNumber, setIdNumber] = React.useState(() => readStoredProfile()?.idNumber || "");
 
   React.useEffect(() => {
     if (!("geolocation" in navigator)) return;
@@ -111,16 +119,6 @@ export function SignForm({
       },
       { timeout: 5000 },
     );
-  }, []);
-
-  React.useEffect(() => {
-    const stored = readStoredProfile();
-    if (!stored) return;
-    if (stored.name) setName(stored.name);
-    if (stored.phone) setPhone(stored.phone);
-    if (stored.idNumber) setIdNumber(stored.idNumber);
-    // Runs once on mount, for this quote's fresh sign page only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   React.useEffect(() => {

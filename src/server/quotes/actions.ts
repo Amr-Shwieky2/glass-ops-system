@@ -57,6 +57,17 @@ const SaveQuoteDraftSchema = z.object({
   paymentTerms: z.string().trim().optional(),
   workTerms: z.string().trim().optional(),
   validUntil: z.string().trim().optional(),
+  // Document language (quotes.language) — the Quote Builder's language
+  // selector always submits one of these two, defaulting to "ar" in the
+  // dialog itself; falls back to "ar" here too if somehow missing/invalid
+  // so a malformed submit never 500s.
+  language: z.enum(["ar", "he"]).optional(),
+  // AI quote-drafting provenance (quote_versions.is_ai_generated /
+  // .ai_prompt_notes) — set only when this save originated from the
+  // AI-draft -> Quote Builder handoff (src/server/quotes/ai-draft-actions.ts
+  // never writes these itself, per the draft-assist-only design).
+  isAiGenerated: z.literal("true").optional(),
+  aiPromptNotes: z.string().trim().optional(),
 });
 
 export async function saveQuoteDraft(
@@ -75,6 +86,9 @@ export async function saveQuoteDraft(
     paymentTerms: emptyToUndefined(formData.get("paymentTerms")),
     workTerms: emptyToUndefined(formData.get("workTerms")),
     validUntil: emptyToUndefined(formData.get("validUntil")),
+    language: emptyToUndefined(formData.get("language")),
+    isAiGenerated: emptyToUndefined(formData.get("isAiGenerated")),
+    aiPromptNotes: emptyToUndefined(formData.get("aiPromptNotes")),
   });
   if (!parsed.success) return { error: "بيانات غير صحيحة" };
 
@@ -125,6 +139,9 @@ export async function saveQuoteDraft(
       paymentTerms: parsed.data.paymentTerms,
       workTerms: parsed.data.workTerms,
       validUntil: parsed.data.validUntil,
+      language: parsed.data.language,
+      isAiGenerated: parsed.data.isAiGenerated === "true",
+      aiPromptNotes: parsed.data.aiPromptNotes,
     });
 
     await recordAudit({

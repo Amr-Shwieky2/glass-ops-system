@@ -23,6 +23,7 @@ export async function GET(
   const settings = await getAllSettings();
   const html = renderQuoteHtml({
     companyInfo: settings.company_info,
+    language: data.quote.language,
     quoteNumber: data.quote.quoteNumber,
     versionNumber: data.version.versionNumber,
     createdAt: data.version.createdAt,

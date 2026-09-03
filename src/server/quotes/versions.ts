@@ -8,6 +8,7 @@ import {
   quoteItems,
   quotePublicLinks,
 } from "@/server/db/schema";
+import type { QuoteLanguage } from "@/lib/quote-i18n";
 import { nextDocumentNumber } from "@/server/numbering";
 import { multiplyMoney, sumMoney, type Money } from "@/server/money";
 
@@ -31,6 +32,17 @@ export interface CreateQuoteVersionParams {
   workTerms?: string;
   /** ISO date string (yyyy-mm-dd), or omitted for "no expiry" recorded. */
   validUntil?: string;
+  /** Document language for the PDF + public signing page (quotes.language).
+   * Omit to leave an existing quote's language untouched, or to default a
+   * brand-new one to "ar" (the column's own DB default) — every caller
+   * before this parameter existed behaves identically either way. */
+  language?: QuoteLanguage;
+  /** AI quote-drafting provenance for THIS version (quote_versions.is_ai_
+   * generated / .ai_prompt_notes) — see src/server/ai/. Omit for a
+   * manually-built version (the default everywhere except the AI-draft ->
+   * Quote Builder handoff). */
+  isAiGenerated?: boolean;
+  aiPromptNotes?: string;
 }
 
 export interface CreateQuoteVersionResult {
@@ -76,6 +88,7 @@ export async function createQuoteVersion(
           customerId: params.customerId,
           jobId: params.jobId,
           status: "draft",
+          language: params.language ?? "ar",
           createdByUserId: params.createdByUserId,
         })
         .returning({ id: quotes.id });
@@ -122,6 +135,8 @@ export async function createQuoteVersion(
         subtotal,
         total,
         isSigned: false,
+        isAiGenerated: params.isAiGenerated ?? false,
+        aiPromptNotes: params.aiPromptNotes,
         createdByUserId: params.createdByUserId,
       })
       .returning({ id: quoteVersions.id });
@@ -147,6 +162,13 @@ export async function createQuoteVersion(
         // brand-new quote is already 'draft', but reset an existing one
         // that had progressed further (sent/signed) back to draft too.
         status: isNewQuote ? undefined : "draft",
+        // Only touch language on an existing quote when the caller actually
+        // supplied one (the Quote Builder always submits its current
+        // selector value, so this keeps whatever the admin picked in sync
+        // on every save, including a revise-after-signed); a brand-new
+        // quote already set it above at insert time, so leave it alone
+        // here to avoid a redundant write.
+        language: !isNewQuote ? params.language : undefined,
         updatedAt: new Date(),
       })
       .where(eq(quotes.id, quoteId));

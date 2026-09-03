@@ -199,6 +199,7 @@ export function QuoteSection({
                   initialPaymentTerms={version.paymentTerms ?? undefined}
                   initialWorkTerms={version.workTerms ?? undefined}
                   initialValidUntil={version.validUntil ?? undefined}
+                  initialLanguage={quote.language}
                   triggerLabel={
                     quote.status === "draft" ? "متابعة تحرير المسودة" : "تعديل العرض (نسخة جديدة)"
                   }
@@ -220,6 +221,7 @@ export function QuoteSection({
                   initialPaymentTerms={version.paymentTerms ?? undefined}
                   initialWorkTerms={version.workTerms ?? undefined}
                   initialValidUntil={version.validUntil ?? undefined}
+                  initialLanguage={quote.language}
                   triggerLabel="تعديل (سينشئ نسخة جديدة تحتاج توقيعاً جديداً)"
                   triggerVariant="outline"
                   warnEditingSigned

@@ -81,6 +81,10 @@ export function AiQuoteDraftTrigger({
 
   const [builderOpen, setBuilderOpen] = React.useState(false);
   const [draft, setDraft] = React.useState<DraftedQuote | null>(null);
+  // The description that produced the current draft — carried into the
+  // Quote Builder as quote_versions.ai_prompt_notes so there's a record of
+  // what was asked for, even after the admin edits the drafted items.
+  const [jobDescription, setJobDescription] = React.useState("");
 
   // Hand a successful draft off to the quote builder and close this dialog;
   // toast the error otherwise. Compares against the previous render's
@@ -125,6 +129,7 @@ export function AiQuoteDraftTrigger({
                 rows={5}
                 required
                 placeholder="مثال: تركيب واجهة زجاجية للمطبخ بمقاس 3×2 متر مع باب منزلق..."
+                onChange={(e) => setJobDescription(e.target.value)}
               />
             </div>
 
@@ -146,6 +151,8 @@ export function AiQuoteDraftTrigger({
         initialWorkTerms={draft?.workTerms}
         initialValidUntil={initialValidUntil}
         initialLanguage="he"
+        initialIsAiGenerated={Boolean(draft)}
+        initialAiPromptNotes={jobDescription || undefined}
         triggerLabel="إنشاء عرض سعر"
         open={builderOpen}
         onOpenChange={setBuilderOpen}
