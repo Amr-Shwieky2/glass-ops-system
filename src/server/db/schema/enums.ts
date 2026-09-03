@@ -132,6 +132,12 @@ export const quoteStatusEnum = pgEnum("quote_status", [
   "superseded",
 ]);
 
+/** Language the quote document (PDF + public signing page) is presented in.
+ * Independent of the internal app UI, which stays Arabic/RTL throughout —
+ * see AGENTS.md. Defaults to "ar"; "he" is for the Hebrew signing-flow
+ * support built alongside this. */
+export const quoteLanguageEnum = pgEnum("quote_language", ["ar", "he"]);
+
 /**
  * The kind of record an approval_request / audit_log entry points at.
  * Kept as a plain enum (rather than a lookup table) because the set of

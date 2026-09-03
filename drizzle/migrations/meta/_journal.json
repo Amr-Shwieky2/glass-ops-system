@@ -57,6 +57,13 @@
       "when": 1788412280173,
       "tag": "0007_broad_sumo",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788412573300,
+      "tag": "0008_bumpy_rocket_raccoon",
+      "breakpoints": true
     }
   ]
 }

@@ -10,7 +10,7 @@ import {
   index,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { quoteStatusEnum } from "./enums";
+import { quoteStatusEnum, quoteLanguageEnum } from "./enums";
 import { customers } from "./customers";
 import { jobs } from "./jobs";
 import { users } from "./auth";
@@ -33,6 +33,10 @@ export const quotes = pgTable(
       .notNull()
       .references((): AnyPgColumn => jobs.id, { onDelete: "cascade" }),
     status: quoteStatusEnum("status").notNull().default("draft"),
+    // Document language for the PDF + public signing page (Hebrew
+    // signing-flow support, built alongside the AI quote-draft feature).
+    // Does not affect the internal app UI, which stays Arabic/RTL.
+    language: quoteLanguageEnum("language").notNull().default("ar"),
     // Pointers into quoteVersions, set by application logic — never edited
     // to "fix" a signed version; see quoteVersions doc comment below.
     currentVersionId: uuid("current_version_id").references(
@@ -84,6 +88,15 @@ export const quoteVersions = pgTable(
     subtotal: numeric("subtotal", { precision: 12, scale: 2 }).notNull(),
     total: numeric("total", { precision: 12, scale: 2 }).notNull(),
     isSigned: boolean("is_signed").notNull().default(false),
+    // AI quote-drafting (draft-assist only, never auto-send — see
+    // src/server/ai/). Set on the version created from an AI-drafted quote
+    // that a human then reviewed and explicitly saved through the normal
+    // Quote Builder flow; the AI itself never writes to this table.
+    isAiGenerated: boolean("is_ai_generated").notNull().default(false),
+    // The admin's free-text job-description input that produced the AI
+    // draft this version was built from. Null for a manually-built version,
+    // or an AI-assisted one where the admin heavily rewrote everything.
+    aiPromptNotes: text("ai_prompt_notes"),
     createdByUserId: uuid("created_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
