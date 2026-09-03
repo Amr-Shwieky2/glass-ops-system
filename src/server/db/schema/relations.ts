@@ -7,8 +7,9 @@ import {
   jobItems,
   jobAssignments,
   measurements,
+  measurementAttachments,
 } from "./jobs";
-import { jobStatuses, workTypes, compensationRules } from "./lookups";
+import { jobStatuses, workTypes, glassTypes, compensationRules } from "./lookups";
 import { appointments, appointmentAssignees } from "./appointments";
 import {
   quotes,
@@ -135,7 +136,7 @@ export const jobAssignmentsRelations = relations(jobAssignments, ({ one }) => ({
   }),
 }));
 
-export const measurementsRelations = relations(measurements, ({ one }) => ({
+export const measurementsRelations = relations(measurements, ({ one, many }) => ({
   job: one(jobs, { fields: [measurements.jobId], references: [jobs.id] }),
   measuredBy: one(users, {
     fields: [measurements.measuredByUserId],
@@ -145,7 +146,30 @@ export const measurementsRelations = relations(measurements, ({ one }) => ({
     fields: [measurements.pricingResponsibleUserId],
     references: [users.id],
   }),
+  glassType: one(glassTypes, {
+    fields: [measurements.glassTypeId],
+    references: [glassTypes.id],
+  }),
+  attachments: many(measurementAttachments),
 }));
+
+export const glassTypesRelations = relations(glassTypes, ({ many }) => ({
+  measurements: many(measurements),
+}));
+
+export const measurementAttachmentsRelations = relations(
+  measurementAttachments,
+  ({ one }) => ({
+    measurement: one(measurements, {
+      fields: [measurementAttachments.measurementId],
+      references: [measurements.id],
+    }),
+    uploadedBy: one(users, {
+      fields: [measurementAttachments.uploadedByUserId],
+      references: [users.id],
+    }),
+  }),
+);
 
 export const appointmentsRelations = relations(appointments, ({ one, many }) => ({
   job: one(jobs, { fields: [appointments.jobId], references: [jobs.id] }),

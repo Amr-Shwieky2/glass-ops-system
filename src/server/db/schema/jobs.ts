@@ -5,12 +5,13 @@ import {
   timestamp,
   numeric,
   boolean,
+  integer,
   index,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { jobItemStatusEnum } from "./enums";
 import { customers } from "./customers";
-import { jobStatuses, workTypes } from "./lookups";
+import { jobStatuses, workTypes, glassTypes } from "./lookups";
 import { users } from "./auth";
 import { externalContractors } from "./contractors";
 import { quotes, quoteVersions } from "./quotes";
@@ -179,9 +180,54 @@ export const measurements = pgTable(
       () => users.id,
       { onDelete: "set null" },
     ),
+    // New Measurement quick-submit flow (spec section 4) — nullable, only
+    // populated when a measurement originates from that field flow. Never
+    // touched by src/server/money.ts arithmetic: fieldQuotedPrice is a
+    // reference amount only, never summed into anything.
+    glassTypeId: uuid("glass_type_id").references(() => glassTypes.id, {
+      onDelete: "set null",
+    }),
+    fieldQuotedPrice: numeric("field_quoted_price", {
+      precision: 12,
+      scale: 2,
+    }),
+    fieldQuotedPriceIncludesVat: boolean("field_quoted_price_includes_vat"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (t) => [index("measurements_job_idx").on(t.jobId)],
+);
+
+/**
+ * Files attached to a field-submitted measurement (New Measurement
+ * quick-submit flow, spec section 4/5) — photos or a PDF captured on-site.
+ * `storagePath` is a relative path under storage/measurement-attachments/
+ * outside `public/`, never guessable/reachable directly; retrieval only
+ * through the authenticated GET /api/attachments/:attachmentId route
+ * (src/app/api/attachments/[attachmentId]/route.ts), which re-derives the
+ * owning job through this row's measurementId and applies the same
+ * involvement/permission check the job detail page itself uses.
+ */
+export const measurementAttachments = pgTable(
+  "measurement_attachments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    measurementId: uuid("measurement_id")
+      .notNull()
+      .references(() => measurements.id, { onDelete: "cascade" }),
+    fileName: text("file_name").notNull(), // original filename, for display
+    storagePath: text("storage_path").notNull(), // relative path on disk
+    mimeType: text("mime_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    uploadedByUserId: uuid("uploaded_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("measurement_attachments_measurement_idx").on(t.measurementId),
+  ],
 );

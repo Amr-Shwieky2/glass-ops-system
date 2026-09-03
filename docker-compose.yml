@@ -56,6 +56,15 @@ services:
       # host port 3000 on this machine, so the containerized app is
       # published on 3001 instead.
       - "3001:3000"
+    volumes:
+      # Measurement attachments (New Measurement quick-submit flow,
+      # src/server/storage/attachments.ts) are written outside `public/`
+      # to `storage/measurement-attachments` under the app's WORKDIR
+      # (/app, per the Dockerfile) — a named volume here so uploads
+      # survive a container rebuild, matching how postgres_data already
+      # persists Postgres's own data.
+      - measurement_attachments:/app/storage
 
 volumes:
   postgres_data:
+  measurement_attachments:

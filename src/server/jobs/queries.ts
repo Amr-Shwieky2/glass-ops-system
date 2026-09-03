@@ -8,9 +8,11 @@ import {
   jobItems,
   jobAssignments,
   measurements,
+  measurementAttachments,
   users,
   externalContractors,
   workTypes,
+  glassTypes,
 } from "@/server/db/schema";
 
 /** Jobs a restricted (VIEW_ASSIGNED_JOBS-only) viewer is "involved in" —
@@ -157,7 +159,7 @@ export async function getJobDetail(jobId: string) {
   const job = rows[0];
   if (!job) return null;
 
-  const [items, assignments, measurementRows] = await Promise.all([
+  const [items, assignments, measurementRows, attachmentRows] = await Promise.all([
     db
       .select({
         id: jobItems.id,
@@ -199,14 +201,48 @@ export async function getJobDetail(jobId: string) {
         photosTaken: measurements.photosTaken,
         measuredByName: users.name,
         pricingResponsibleUserId: measurements.pricingResponsibleUserId,
+        // New Measurement quick-submit flow fields (spec section 4) — all
+        // null on an ordinary office-recorded measurement.
+        glassTypeId: measurements.glassTypeId,
+        glassTypeLabelAr: glassTypes.labelAr,
+        // Reference-only, never summed into anything — see the column's
+        // own comment in src/server/db/schema/jobs.ts. Display as entered,
+        // e.g. "₪2,500 · شامل الضريبة", never fed into money.ts arithmetic.
+        fieldQuotedPrice: measurements.fieldQuotedPrice,
+        fieldQuotedPriceIncludesVat: measurements.fieldQuotedPriceIncludesVat,
       })
       .from(measurements)
       .innerJoin(users, eq(measurements.measuredByUserId, users.id))
+      .leftJoin(glassTypes, eq(measurements.glassTypeId, glassTypes.id))
       .where(eq(measurements.jobId, jobId))
       .orderBy(desc(measurements.measuredAt)),
+    db
+      .select({
+        id: measurementAttachments.id,
+        measurementId: measurementAttachments.measurementId,
+        fileName: measurementAttachments.fileName,
+        mimeType: measurementAttachments.mimeType,
+        sizeBytes: measurementAttachments.sizeBytes,
+        createdAt: measurementAttachments.createdAt,
+      })
+      .from(measurementAttachments)
+      .innerJoin(measurements, eq(measurementAttachments.measurementId, measurements.id))
+      .where(eq(measurements.jobId, jobId))
+      .orderBy(measurementAttachments.createdAt),
   ]);
 
-  return { ...job, items, assignments, measurements: measurementRows };
+  // Attachments come back with a `url` resolved here (not stored) so the
+  // UI never constructs the retrieval path itself — just
+  // GET /api/attachments/:attachmentId, the authenticated route in
+  // src/app/api/attachments/[attachmentId]/route.ts.
+  const measurementsWithAttachments = measurementRows.map((m) => ({
+    ...m,
+    attachments: attachmentRows
+      .filter((a) => a.measurementId === m.id)
+      .map((a) => ({ ...a, url: `/api/attachments/${a.id}` })),
+  }));
+
+  return { ...job, items, assignments, measurements: measurementsWithAttachments };
 }
 
 /** Every active user, for assignment / measurement-responsibility pickers. */

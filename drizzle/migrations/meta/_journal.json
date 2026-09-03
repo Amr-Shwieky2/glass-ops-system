@@ -43,6 +43,13 @@
       "when": 1788404814830,
       "tag": "0005_wet_legion",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788407787757,
+      "tag": "0006_third_tomas",
+      "breakpoints": true
     }
   ]
 }

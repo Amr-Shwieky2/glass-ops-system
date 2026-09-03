@@ -44,3 +44,6 @@ next-env.d.ts
 
 # database backups (runtime artifacts, see scripts/backup.sh)
 /backups/
+
+# measurement attachments (runtime uploads, see src/server/storage/attachments.ts)
+/storage/

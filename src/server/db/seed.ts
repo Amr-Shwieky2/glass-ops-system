@@ -65,10 +65,10 @@ async function main() {
       factory_public_links, factory_submissions, production_requests,
       quote_public_links, quote_signatures, quote_items, quote_versions, quotes,
       appointment_assignees, appointments,
-      job_assignments, measurements, job_items, jobs,
+      job_assignments, measurement_attachments, measurements, job_items, jobs,
       external_contractors,
       application_settings, number_sequences, bonus_rules, penalty_rules,
-      compensation_rules, work_types, job_statuses,
+      compensation_rules, work_types, glass_types, job_statuses,
       customers,
       sessions, user_permissions, permissions, users
     RESTART IDENTITY CASCADE
@@ -133,6 +133,12 @@ async function main() {
     ["new_lead", "New Lead", "عميل محتمل جديد", false],
     ["measurement_scheduled", "Measurement Scheduled", "تحديد موعد القياس", false],
     ["measurement_completed", "Measurement Completed", "تم القياس", false],
+    // New Measurement quick-submit flow (docs/superpowers/specs/
+    // 2026-09-03-new-measurement-quick-submit-design.md section 4) — a job
+    // created directly at this status by a technician's field submission,
+    // sitting between "measured" and "priced" exactly like a normal job
+    // that just hasn't been picked up for pricing yet.
+    ["field_submission_pending", "Field Measurement — Pending Review", "قياس من الميدان – بانتظار المراجعة", false],
     ["waiting_for_pricing", "Waiting for Pricing", "بانتظار التسعير", false],
     ["quote_sent", "Quote Sent", "تم إرسال عرض السعر", false],
     ["waiting_for_customer_approval", "Waiting for Customer Approval", "بانتظار موافقة العميل", false],
@@ -188,6 +194,24 @@ async function main() {
     )
     .returning();
   const workTypeByKey = Object.fromEntries(workTypeRows.map((w) => [w.key, w]));
+
+  console.log("Seeding glass types...");
+  const glassTypeDefs = [
+    ["tempered", "Tempered", "مقسّى"],
+    ["laminated", "Laminated", "لامينيت"],
+    ["frosted", "Frosted", "ساتر (فروستد)"],
+    ["mirrored", "Mirrored", "مرآة"],
+    ["patterned", "Patterned", "منقوش"],
+    ["other", "Other", "أخرى"],
+  ] as const;
+  await db.insert(schema.glassTypes).values(
+    glassTypeDefs.map(([key, labelEn, labelAr], i) => ({
+      key,
+      labelEn,
+      labelAr,
+      sortOrder: i,
+    })),
+  );
 
   console.log("Seeding compensation/penalty/bonus rules...");
   await db.insert(schema.compensationRules).values([

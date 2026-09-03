@@ -46,6 +46,22 @@ export const workTypes = pgTable("work_types", {
 });
 
 /**
+ * Admin-editable glass-type lookup for the New Measurement quick-submit
+ * flow (docs/superpowers/specs/2026-09-03-new-measurement-quick-submit-design.md
+ * section 4) — same shape and conventions as `workTypes` above, extended
+ * via the same Settings lookups CRUD pattern (src/server/lookups/actions.ts)
+ * rather than a separate one-off. Referenced from `measurements.glassTypeId`.
+ */
+export const glassTypes = pgTable("glass_types", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  key: text("key").notNull().unique(),
+  labelEn: text("label_en").notNull(),
+  labelAr: text("label_ar").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+/**
  * Configurable installer compensation rates (section 23), e.g. "Glass
  * Railing: 250 ILS / meter". Never hardcode these amounts in application
  * code — always look them up here so Settings can edit them.
