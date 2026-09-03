@@ -2,17 +2,20 @@ import type { Metadata } from "next";
 import { FileX2, Ban, Clock, CheckCircle2, Download } from "lucide-react";
 import { getQuoteByPublicToken, touchPublicLinkAccess, type PublicQuote } from "@/server/quotes/queries";
 import { formatILS } from "@/server/money";
+import { getQuoteLabels, type QuoteLabels, type QuoteLanguage } from "@/lib/quote-i18n";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { SignForm } from "./sign-form";
 
 export const metadata: Metadata = { title: "عرض السعر | إدارة عمليات الزجاج" };
 
-const dateFmt = new Intl.DateTimeFormat("ar", {
-  year: "numeric",
-  month: "long",
-  day: "numeric",
-  numberingSystem: "latn",
-});
+function getDateFormatter(language: QuoteLanguage) {
+  return new Intl.DateTimeFormat(language === "he" ? "he" : "ar", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    numberingSystem: "latn",
+  });
+}
 
 function StatusNotice({
   icon: Icon,
@@ -38,14 +41,25 @@ function StatusNotice({
   );
 }
 
-function QuoteSummary({ data }: { data: PublicQuote }) {
+function QuoteSummary({
+  data,
+  labels,
+  language,
+}: {
+  data: PublicQuote;
+  labels: QuoteLabels;
+  language: QuoteLanguage;
+}) {
+  const dateFmt = getDateFormatter(language);
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center justify-between text-base">
-          <span>عرض سعر {data.quote.quoteNumber}</span>
+          <span>
+            {labels.documentTitlePrefix} {data.quote.quoteNumber}
+          </span>
           <span className="text-sm font-normal text-muted-foreground">
-            الإصدار {data.version.versionNumber}
+            {labels.version} {data.version.versionNumber}
           </span>
         </CardTitle>
       </CardHeader>
@@ -71,7 +85,7 @@ function QuoteSummary({ data }: { data: PublicQuote }) {
           ))}
         </ul>
         <div className="flex items-center justify-between border-t pt-3 text-lg font-bold">
-          <span>الإجمالي</span>
+          <span>{labels.total}</span>
           <span dir="ltr">{formatILS(data.version.total)}</span>
         </div>
         {(data.version.paymentTerms || data.version.workTerms) && (
@@ -82,7 +96,7 @@ function QuoteSummary({ data }: { data: PublicQuote }) {
         )}
         {data.version.validUntil && (
           <p className="text-xs text-muted-foreground">
-            صالح حتى {dateFmt.format(new Date(data.version.validUntil))}
+            {labels.validUntil} {dateFmt.format(new Date(data.version.validUntil))}
           </p>
         )}
       </CardContent>
@@ -90,7 +104,7 @@ function QuoteSummary({ data }: { data: PublicQuote }) {
   );
 }
 
-function PdfLink({ token }: { token: string }) {
+function PdfLink({ token, labels }: { token: string; labels: QuoteLabels }) {
   return (
     <a
       href={`/api/public/quotes/${token}/pdf`}
@@ -99,7 +113,7 @@ function PdfLink({ token }: { token: string }) {
       className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
     >
       <Download className="size-4" />
-      تحميل نسخة PDF
+      {labels.pdfDownloadLabel}
     </a>
   );
 }
@@ -113,23 +127,30 @@ export default async function PublicQuotePage({
   const data = await getQuoteByPublicToken(token);
 
   if (!data) {
+    // No quote resolved yet — nothing to read a language off of, so this
+    // one notice (unlike every other string on this page) stays Arabic.
+    const labels = getQuoteLabels("ar");
     return (
       <StatusNotice
         icon={FileX2}
-        title="الرابط غير صالح"
-        description="تعذر العثور على عرض سعر مرتبط بهذا الرابط. تواصل معنا للحصول على رابط جديد."
+        title={labels.statusNotices.invalidLinkTitle}
+        description={labels.statusNotices.invalidLinkDescription}
       />
     );
   }
 
   await touchPublicLinkAccess(token);
 
+  const language: QuoteLanguage = data.quote.language;
+  const labels = getQuoteLabels(language);
+  const dateFmt = getDateFormatter(language);
+
   if (data.isRevoked) {
     return (
       <StatusNotice
         icon={Ban}
-        title="تم إلغاء هذا الرابط"
-        description="لم يعد هذا الرابط صالحاً للاستخدام. تواصل معنا للحصول على رابط جديد."
+        title={labels.statusNotices.revokedTitle}
+        description={labels.statusNotices.revokedDescription}
       />
     );
   }
@@ -140,12 +161,15 @@ export default async function PublicQuotePage({
         <StatusNotice
           icon={CheckCircle2}
           tone="success"
-          title="تم توقيع عرض السعر"
-          description={`تم التوقيع بتاريخ ${dateFmt.format(data.signature!.signedAt)} بواسطة ${data.signature!.customerNameAtSigning}. شكراً لك.`}
+          title={labels.statusNotices.signedTitle}
+          description={labels.statusNotices.signedDescription(
+            dateFmt.format(data.signature!.signedAt),
+            data.signature!.customerNameAtSigning,
+          )}
         />
-        <QuoteSummary data={data} />
+        <QuoteSummary data={data} labels={labels} language={language} />
         <div className="text-center">
-          <PdfLink token={token} />
+          <PdfLink token={token} labels={labels} />
         </div>
       </div>
     );
@@ -156,12 +180,12 @@ export default async function PublicQuotePage({
       <div className="space-y-6">
         <StatusNotice
           icon={Clock}
-          title="انتهت صلاحية هذا العرض"
-          description="انتهت صلاحية عرض السعر هذا. تواصل معنا لإصدار عرض جديد."
+          title={labels.statusNotices.expiredTitle}
+          description={labels.statusNotices.expiredDescription}
         />
-        <QuoteSummary data={data} />
+        <QuoteSummary data={data} labels={labels} language={language} />
         <div className="text-center">
-          <PdfLink token={token} />
+          <PdfLink token={token} labels={labels} />
         </div>
       </div>
     );
@@ -169,12 +193,13 @@ export default async function PublicQuotePage({
 
   return (
     <div className="space-y-6">
-      <QuoteSummary data={data} />
+      <QuoteSummary data={data} labels={labels} language={language} />
       <div className="text-center">
-        <PdfLink token={token} />
+        <PdfLink token={token} labels={labels} />
       </div>
       <SignForm
         token={token}
+        language={language}
         defaultName={data.customer?.name ?? ""}
         defaultPhone={data.customer?.phone ?? ""}
         defaultAddress={data.customer?.address ?? ""}
