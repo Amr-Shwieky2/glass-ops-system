@@ -9,6 +9,7 @@ const STATUS_VARIANTS: Record<string, BadgeVariant> = {
   new_lead: "info",
   measurement_scheduled: "info",
   measurement_completed: "info",
+  field_submission_pending: "warning",
   waiting_for_pricing: "warning",
   quote_sent: "warning",
   waiting_for_customer_approval: "warning",

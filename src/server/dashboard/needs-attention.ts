@@ -94,6 +94,49 @@ export async function getJobsWaitingForPricing(
   return { items: rows.slice(0, PREVIEW_LIMIT), total: rows.length };
 }
 
+export interface FieldMeasurementPendingReviewRow {
+  id: string;
+  jobNumber: string;
+  customerName: string;
+  updatedAt: Date;
+}
+
+/**
+ * Jobs sitting at status = field_submission_pending — created directly by
+ * the New Measurement quick-submit flow (docs/superpowers/specs/
+ * 2026-09-03-new-measurement-quick-submit-design.md section 7 step 4:
+ * "one more small query following the exact shape of
+ * getJobsWaitingForPricing"), waiting for anyone holding CREATE_PRICE to
+ * pick them up and set themselves as pricingResponsibleUserId. Additive
+ * query, not part of the backend stage's original six — flagged in this
+ * stage's own report per the parent task's instructions. Newest-updated
+ * first, matching every sibling function in this file.
+ */
+export async function getFieldMeasurementsPendingReview(
+  restrictToUserId?: string,
+): Promise<JobsNeedingAttentionResult<FieldMeasurementPendingReviewRow>> {
+  const rows = await db
+    .select({
+      id: jobs.id,
+      jobNumber: jobs.jobNumber,
+      customerName: customers.name,
+      updatedAt: jobs.updatedAt,
+    })
+    .from(jobs)
+    .innerJoin(jobStatuses, eq(jobs.statusId, jobStatuses.id))
+    .innerJoin(customers, eq(jobs.customerId, customers.id))
+    .where(
+      and(
+        isNull(jobs.deletedAt),
+        eq(jobStatuses.key, "field_submission_pending"),
+        ...(restrictToUserId ? [involvementFilter(restrictToUserId)!] : []),
+      ),
+    )
+    .orderBy(desc(jobs.updatedAt));
+
+  return { items: rows.slice(0, PREVIEW_LIMIT), total: rows.length };
+}
+
 export interface JobWaitingForQuoteSignatureRow {
   id: string;
   jobNumber: string;

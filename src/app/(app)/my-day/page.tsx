@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { CalendarCheck } from "lucide-react";
 import { AppointmentCard } from "./appointment-card";
 import { AddFuelQuickAction } from "./add-fuel-quick-action";
+import { NewMeasurementQuickAction } from "./new-measurement-quick-action";
 
 export const metadata: Metadata = {
   title: "يومي | نظام إدارة عمليات الزجاج",
@@ -33,6 +34,7 @@ export default async function MyDayPage() {
   const { start, end } = getTodayRangeUtc();
   const canCompleteInstallation = can(user, PERMISSIONS.COMPLETE_INSTALLATION);
   const canAddFuel = can(user, PERMISSIONS.ADD_FUEL);
+  const canCreateMeasurement = can(user, PERMISSIONS.CREATE_MEASUREMENT);
 
   const [appointments, vehicles] = await Promise.all([
     getMyDayAppointments(user.id, start, end),
@@ -60,6 +62,8 @@ export default async function MyDayPage() {
           ))}
         </div>
       )}
+
+      {canCreateMeasurement && <NewMeasurementQuickAction />}
 
       {canAddFuel && activeVehicles.length > 0 && (
         <AddFuelQuickAction vehicles={activeVehicles} defaultVehicleId={user.defaultVehicleId} />

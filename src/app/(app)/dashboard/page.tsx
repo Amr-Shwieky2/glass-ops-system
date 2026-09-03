@@ -13,6 +13,7 @@ import { getOpenRepairsCount, getOpenRepairs } from "@/server/repairs/queries";
 import {
   PREVIEW_LIMIT,
   getJobsWaitingForPricing,
+  getFieldMeasurementsPendingReview,
   getJobsWaitingForQuoteSignature,
   getFactoryPricesWaitingApproval,
   getCustomersWithOutstandingBalance,
@@ -39,6 +40,7 @@ import {
   Banknote,
   FileCheck2,
   ClipboardCheck,
+  Camera,
 } from "lucide-react";
 
 export const metadata: Metadata = {
@@ -76,6 +78,7 @@ async function getDashboardStats(
   canSeeApprovals: boolean,
   canSeeFactoryPrices: boolean,
   canSeeCustomerBalances: boolean,
+  canSeeFieldMeasurementsPending: boolean,
 ) {
   const { start: todayStart, end: todayEnd } = getTodayRangeUtc();
 
@@ -88,6 +91,7 @@ async function getDashboardStats(
     openRepairsCount,
     openRepairs,
     waitingForPricing,
+    fieldMeasurementsPendingReview,
     waitingForQuoteSignature,
     factoryPricesWaitingApproval,
     customersWithOutstandingBalance,
@@ -178,6 +182,9 @@ async function getDashboardStats(
     getOpenRepairsCount(restrictToUserId),
     getOpenRepairs(restrictToUserId),
     getJobsWaitingForPricing(restrictToUserId),
+    canSeeFieldMeasurementsPending
+      ? getFieldMeasurementsPendingReview(restrictToUserId)
+      : Promise.resolve({ items: [], total: 0 }),
     getJobsWaitingForQuoteSignature(restrictToUserId),
     canSeeFactoryPrices
       ? getFactoryPricesWaitingApproval(restrictToUserId)
@@ -201,6 +208,7 @@ async function getDashboardStats(
     openRepairsCount,
     openRepairs,
     waitingForPricing,
+    fieldMeasurementsPendingReview,
     waitingForQuoteSignature,
     factoryPricesWaitingApproval,
     customersWithOutstandingBalance,
@@ -270,6 +278,12 @@ export default async function DashboardPage() {
     PERMISSIONS.APPROVE_PAYMENT,
     PERMISSIONS.VIEW_JOB_COSTS,
   ]);
+  // New Measurement quick-submit flow (docs/superpowers/specs/
+  // 2026-09-03-new-measurement-quick-submit-design.md section 7 step 4) —
+  // this row exists to surface field submissions to whoever can actually
+  // act on them, matching the same CREATE_PRICE gate the submit action
+  // itself broadcasts its notification to.
+  const canSeeFieldMeasurementsPending = can(user, PERMISSIONS.CREATE_PRICE);
   const restrictToUserId = canViewAll ? undefined : user!.id;
   const stats = await getDashboardStats(
     restrictToUserId,
@@ -277,6 +291,7 @@ export default async function DashboardPage() {
     canSeeApprovals,
     canSeeFactoryPrices,
     canSeeCustomerBalances,
+    canSeeFieldMeasurementsPending,
   );
 
   const readyWithoutInstallPreview = stats.readyWithoutInstall
@@ -307,6 +322,19 @@ export default async function DashboardPage() {
       total: stats.openRepairsCount,
       preview: openRepairsPreview,
       href: "/repairs?status=open",
+    });
+  }
+
+  if (canSeeFieldMeasurementsPending && stats.fieldMeasurementsPendingReview.total > 0) {
+    categories.push({
+      id: "field-measurements-pending-review",
+      icon: Camera,
+      label: "قياسات ميدانية بانتظار المراجعة",
+      total: stats.fieldMeasurementsPendingReview.total,
+      preview: stats.fieldMeasurementsPendingReview.items.map(
+        (j) => `${j.jobNumber} — ${j.customerName}`,
+      ),
+      href: "/jobs?status=field_submission_pending",
     });
   }
 

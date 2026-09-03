@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Ruler, ListChecks, Users2, MapPin, Calendar } from "lucide-react";
+import { ArrowLeft, Ruler, ListChecks, Users2, MapPin, Calendar, Paperclip } from "lucide-react";
 import { getCurrentUser } from "@/server/auth/session";
 import { can, canAny } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
@@ -47,6 +47,7 @@ import { CancelJobDialog } from "./cancel-job-dialog";
 import { CloseJobButton } from "./close-job-button";
 import { RepairsSection } from "./repairs-section";
 import { ConfirmRemoveButton } from "./confirm-remove-button";
+import { FieldMeasurementSuccessToast } from "./field-measurement-success-toast";
 import { deleteJobItem, removeAssignment } from "@/server/jobs/actions";
 
 export async function generateMetadata({
@@ -73,6 +74,15 @@ const dateTimeFmt = new Intl.DateTimeFormat("ar", {
   minute: "2-digit",
   numberingSystem: "latn",
 });
+
+/** Small local formatter for measurement-attachment sizes — no shared
+ * "format bytes" helper exists elsewhere in this codebase yet, and one
+ * extra reading here doesn't warrant introducing one. */
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} بايت`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} ك.ب`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} م.ب`;
+}
 
 export default async function JobDetailPage({
   params,
@@ -196,6 +206,8 @@ export default async function JobDetailPage({
 
   return (
     <div className="space-y-6">
+      <FieldMeasurementSuccessToast statusKey={job.statusKey} />
+
       <Link
         href="/jobs"
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -319,6 +331,52 @@ export default async function JobDetailPage({
                   </div>
                   {m.details && (
                     <p className="mt-1 text-sm text-muted-foreground">{m.details}</p>
+                  )}
+
+                  {/* Field submission data (New Measurement quick-submit
+                      flow, docs/superpowers/specs/
+                      2026-09-03-new-measurement-quick-submit-design.md
+                      section 7 step 4) — all null on an ordinary
+                      office-recorded measurement, so nothing extra renders
+                      for those. */}
+                  {m.glassTypeLabelAr && (
+                    <div className="mt-2">
+                      <Badge variant="outline">نوع الزجاج: {m.glassTypeLabelAr}</Badge>
+                    </div>
+                  )}
+
+                  {m.fieldQuotedPrice && (
+                    <div className="mt-2 rounded-md border border-warning/30 bg-warning/5 p-2 text-sm">
+                      <p className="font-medium text-foreground" dir="ltr">
+                        {formatILS(m.fieldQuotedPrice)}
+                        {" · "}
+                        {m.fieldQuotedPriceIncludesVat ? "شامل الضريبة" : "قبل الضريبة"}
+                      </p>
+                      <p className="text-xs text-warning">
+                        سعر مرجعي من الميدان — غير ملزم
+                      </p>
+                    </div>
+                  )}
+
+                  {m.attachments.length > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {m.attachments.map((a) => (
+                        <li key={a.id}>
+                          <a
+                            href={a.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+                          >
+                            <Paperclip className="size-3.5 shrink-0" />
+                            <span className="truncate">{a.fileName}</span>
+                            <span dir="ltr" className="shrink-0 text-xs text-muted-foreground">
+                              ({formatFileSize(a.sizeBytes)})
+                            </span>
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </li>
               ))}
