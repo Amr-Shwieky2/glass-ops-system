@@ -34,6 +34,17 @@ export interface QuoteBuilderItem {
   unitPrice: string;
 }
 
+/** Document language for this quote (see quotes.language in the schema —
+ * drives the PDF + public signing page). Defaults to "ar" everywhere below
+ * so today's manual Arabic flow is unaffected unless someone deliberately
+ * switches it (e.g. the AI-draft flow, which defaults new drafts to "he"). */
+export type QuoteLanguage = "ar" | "he";
+
+const LANGUAGE_OPTIONS: { value: QuoteLanguage; label: string }[] = [
+  { value: "ar", label: "العربية" },
+  { value: "he", label: "العبرية" },
+];
+
 interface Row extends QuoteBuilderItem {
   key: string;
 }
@@ -70,9 +81,13 @@ export function QuoteBuilderDialog({
   initialPaymentTerms,
   initialWorkTerms,
   initialValidUntil,
+  initialLanguage = "ar",
   triggerLabel,
   triggerVariant = "default",
   warnEditingSigned = false,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+  hideTrigger = false,
 }: {
   jobId: string;
   quoteId?: string;
@@ -81,11 +96,26 @@ export function QuoteBuilderDialog({
   initialPaymentTerms?: string;
   initialWorkTerms?: string;
   initialValidUntil?: string;
+  /** Defaults to "ar" so the normal manual-entry path (and every existing
+   * caller of this component) is unaffected. */
+  initialLanguage?: QuoteLanguage;
   triggerLabel: string;
   triggerVariant?: "default" | "outline" | "secondary";
   warnEditingSigned?: boolean;
+  /** Controlled open state, for a caller that opens this dialog
+   * programmatically (e.g. the AI-draft flow) instead of via its own
+   * trigger button. Omit both for the normal uncontrolled/trigger-driven
+   * usage (the default everywhere else in this app). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Suppresses the built-in DialogTrigger button — used together with
+   * `open`/`onOpenChange` when another component owns how this dialog gets
+   * opened. */
+  hideTrigger?: boolean;
 }) {
-  const [open, setOpen] = React.useState(false);
+  const [internalOpen, setInternalOpen] = React.useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = controlledOnOpenChange ?? setInternalOpen;
   const action = saveQuoteDraft.bind(null, jobId);
   const [state, formAction] = useActionState(action, initialState);
   const [rows, setRows] = React.useState<Row[]>(() =>
@@ -93,11 +123,13 @@ export function QuoteBuilderDialog({
       ? initialItems.map((i) => newRow(i))
       : [newRow()],
   );
+  const [language, setLanguage] = React.useState<QuoteLanguage>(initialLanguage);
 
   useCloseOnSuccess(state, setOpen);
 
-  // Re-seed rows from props each time the dialog opens, so re-opening after
-  // a save (or opening the "revise" dialog on a different quote) starts
+  // Re-seed rows/language from props each time the dialog opens, so
+  // re-opening after a save (or opening the "revise" dialog on a different
+  // quote, or opening this same instance again with a fresh AI draft) starts
   // from the latest content rather than stale state from the last time
   // this component instance was open. Compares against the previous
   // render's `open` instead of a useEffect (same "adjust state while
@@ -111,6 +143,7 @@ export function QuoteBuilderDialog({
           ? initialItems.map((i) => newRow(i))
           : [newRow()],
       );
+      setLanguage(initialLanguage);
     }
   }
 
@@ -136,11 +169,13 @@ export function QuoteBuilderDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm" variant={triggerVariant}>
-          {triggerLabel}
-        </Button>
-      </DialogTrigger>
+      {!hideTrigger && (
+        <DialogTrigger asChild>
+          <Button size="sm" variant={triggerVariant}>
+            {triggerLabel}
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{triggerLabel}</DialogTitle>
@@ -159,6 +194,7 @@ export function QuoteBuilderDialog({
         <form action={formAction} className="space-y-4" noValidate>
           <input type="hidden" name="quoteId" value={quoteId ?? ""} />
           <input type="hidden" name="itemsJson" value={itemsJson} />
+          <input type="hidden" name="language" value={language} />
 
           <div className="space-y-3">
             <Label>بنود العرض</Label>
@@ -266,15 +302,32 @@ export function QuoteBuilderDialog({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="validUntil">صالح حتى</Label>
-            <Input
-              id="validUntil"
-              name="validUntil"
-              type="date"
-              dir="ltr"
-              defaultValue={initialValidUntil}
-            />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="validUntil">صالح حتى</Label>
+              <Input
+                id="validUntil"
+                name="validUntil"
+                type="date"
+                dir="ltr"
+                defaultValue={initialValidUntil}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>لغة المستند</Label>
+              <Select value={language} onValueChange={(v) => setLanguage(v as QuoteLanguage)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LANGUAGE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {state.error && (

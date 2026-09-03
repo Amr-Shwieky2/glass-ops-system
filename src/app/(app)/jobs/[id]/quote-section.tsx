@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge, type badgeVariants } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { QuoteBuilderDialog, type QuoteBuilderItem } from "./quote-builder-dialog";
+import { AiQuoteDraftTrigger } from "./ai-quote-draft-trigger";
 import { SendQuoteButton } from "./send-quote-button";
 import { ConvertToJobButton } from "./convert-to-job-button";
 
@@ -100,15 +101,22 @@ export function QuoteSection({
           )}
         </CardTitle>
         {canCreateQuote && !quote && (
-          <QuoteBuilderDialog
-            jobId={jobId}
-            workTypes={workTypes}
-            initialItems={
-              jobItems.length > 0 ? deriveQuoteItemsFromJobItems(jobItems) : undefined
-            }
-            initialValidUntil={defaultValidUntil}
-            triggerLabel="إنشاء عرض سعر"
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <QuoteBuilderDialog
+              jobId={jobId}
+              workTypes={workTypes}
+              initialItems={
+                jobItems.length > 0 ? deriveQuoteItemsFromJobItems(jobItems) : undefined
+              }
+              initialValidUntil={defaultValidUntil}
+              triggerLabel="إنشاء عرض سعر"
+            />
+            <AiQuoteDraftTrigger
+              jobId={jobId}
+              workTypes={workTypes}
+              initialValidUntil={defaultValidUntil}
+            />
+          </div>
         )}
       </CardHeader>
       <CardContent className="space-y-4">
