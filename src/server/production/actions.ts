@@ -6,7 +6,6 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import {
   jobs,
-  jobStatuses,
   productionRequests,
   factoryPublicLinks,
   factorySubmissions,
@@ -20,6 +19,7 @@ import { recordAudit } from "@/server/audit";
 import { notifyUsers } from "@/server/notifications";
 import { parseNonNegativeMoneyInput, formatILS } from "@/server/money";
 import { createApprovalRequest } from "@/server/approvals/decide";
+import { lockJobForWrite } from "@/server/jobs/locking";
 import { createProductionRequest } from "./create-request";
 
 export interface ActionState {
@@ -79,34 +79,45 @@ export async function sendToFactoryAction(
     return { error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" };
   }
 
-  const [job] = await db
-    .select({ id: jobs.id, isTerminal: jobStatuses.isTerminal })
-    .from(jobs)
-    .innerJoin(jobStatuses, eq(jobs.statusId, jobStatuses.id))
-    .where(eq(jobs.id, jobId))
-    .limit(1);
-  if (!job) return { error: "المهمة غير موجودة" };
-  if (job.isTerminal) return { error: "لا يمكن إرسال مهمة مغلقة إلى المصنع." };
-
-  const [existing] = await db
-    .select({ id: productionRequests.id })
-    .from(productionRequests)
-    .where(eq(productionRequests.jobId, jobId))
-    .limit(1);
-  if (existing) {
-    return { error: "تم إرسال هذه المهمة إلى المصنع بالفعل." };
-  }
-
+  // The job's terminal status and "already sent to factory" state are
+  // re-checked below, INSIDE the transaction, under a row lock
+  // (lockJobForWrite) — not from a plain pre-transaction SELECT. That's
+  // what stops this manual click and the automatic-on-signing path
+  // (runPostSignAutomation, src/server/quotes/actions.ts) from ever both
+  // passing their "not yet sent" check for the same job; see
+  // lockJobForWrite's doc comment.
   let token = "";
+  let result: SendToFactoryState = { success: true };
   await db.transaction(async (tx) => {
-    const result = await createProductionRequest(tx, {
+    const locked = await lockJobForWrite(tx, jobId);
+    if (!locked) {
+      result = { error: "المهمة غير موجودة" };
+      return;
+    }
+    if (locked.isTerminal) {
+      result = { error: "لا يمكن إرسال مهمة مغلقة إلى المصنع." };
+      return;
+    }
+
+    const [existing] = await tx
+      .select({ id: productionRequests.id })
+      .from(productionRequests)
+      .where(eq(productionRequests.jobId, jobId))
+      .limit(1);
+    if (existing) {
+      result = { error: "تم إرسال هذه المهمة إلى المصنع بالفعل." };
+      return;
+    }
+
+    const created = await createProductionRequest(tx, {
       jobId,
       details: parsed.data.details,
       estimatedReadyDate: parsed.data.estimatedReadyDate || null,
       requestedByUserId: user!.id,
     });
-    token = result.token;
+    token = created.token;
   });
+  if (result.error) return result;
 
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath("/production");

@@ -7,7 +7,6 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import {
   jobs,
-  jobStatuses,
   quotes,
   quoteVersions,
   quoteSignatures,
@@ -23,6 +22,7 @@ import { recordAudit } from "@/server/audit";
 import { generateSecureToken } from "@/server/tokens";
 import { parseNonNegativeMoneyInput, isZero } from "@/server/money";
 import { advanceJobStatus } from "@/server/jobs/status";
+import { lockJobForWrite } from "@/server/jobs/locking";
 import { notifyUsers } from "@/server/notifications";
 import { getJobDetail } from "@/server/jobs/queries";
 import { createProductionRequest } from "@/server/production/create-request";
@@ -238,15 +238,6 @@ export async function convertQuoteToJob(
     return { error: "لا تملك صلاحية تحويل العرض إلى مهمة." };
   }
 
-  const [job] = await db
-    .select({ isTerminal: jobStatuses.isTerminal, sourceQuoteVersionId: jobs.sourceQuoteVersionId })
-    .from(jobs)
-    .innerJoin(jobStatuses, eq(jobs.statusId, jobStatuses.id))
-    .where(eq(jobs.id, jobId))
-    .limit(1);
-  if (!job) return { error: "المهمة غير موجودة" };
-  if (job.isTerminal) return { error: "لا يمكن تحويل عرض لمهمة مغلقة." };
-
   const [quote] = await db
     .select({ signedVersionId: quotes.signedVersionId })
     .from(quotes)
@@ -255,17 +246,34 @@ export async function convertQuoteToJob(
   if (!quote?.signedVersionId) {
     return { error: "لا يوجد عرض موقّع لتحويله." };
   }
-  if (quote.signedVersionId === job.sourceQuoteVersionId) {
-    return { error: "تم تحويل هذا العرض بالفعل." };
-  }
 
-  // Commercial responsibility (section 16): the person converting a signed
-  // quote into a job is the one closing the deal — enforced by the
-  // PERMISSIONS.CLOSE_DEAL check above, matching that permission's own
-  // description ("تسجيل إغلاق الصفقة بواسطة هذا المستخدم"). Delegated to
-  // applySignedQuoteToJob (src/server/quotes/convert.ts), shared with the
-  // automatic-on-signing path in signQuotePublicly below.
+  // The job's terminal/already-converted state is checked again below,
+  // INSIDE the transaction, under a row lock (lockJobForWrite) — not just
+  // here. A plain pre-transaction check would leave a race window against
+  // the automatic-on-signing path (runPostSignAutomation), which can run
+  // concurrently with this manual click; see lockJobForWrite's doc comment.
+  let result: ActionState = { success: true };
   await db.transaction(async (tx) => {
+    const locked = await lockJobForWrite(tx, jobId);
+    if (!locked) {
+      result = { error: "المهمة غير موجودة" };
+      return;
+    }
+    if (locked.isTerminal) {
+      result = { error: "لا يمكن تحويل عرض لمهمة مغلقة." };
+      return;
+    }
+    if (quote.signedVersionId === locked.sourceQuoteVersionId) {
+      result = { error: "تم تحويل هذا العرض بالفعل." };
+      return;
+    }
+
+    // Commercial responsibility (section 16): the person converting a
+    // signed quote into a job is the one closing the deal — enforced by
+    // the PERMISSIONS.CLOSE_DEAL check above, matching that permission's
+    // own description ("تسجيل إغلاق الصفقة بواسطة هذا المستخدم"). Delegated
+    // to applySignedQuoteToJob (src/server/quotes/convert.ts), shared with
+    // the automatic-on-signing path in signQuotePublicly below.
     await applySignedQuoteToJob(tx, {
       jobId,
       quoteId,
@@ -273,6 +281,7 @@ export async function convertQuoteToJob(
       dealClosedByUserId: user!.id,
     });
   });
+  if (result.error) return result;
 
   revalidatePath(`/jobs/${jobId}`);
   return { success: true };
@@ -545,9 +554,43 @@ async function runPostSignAutomation(params: {
       return;
     }
 
-    // (b) Auto-convert — identical core logic to the manual button.
+    // (b) Auto-convert — identical core logic to the manual button, but
+    // (unlike a plain re-run of that logic) the job's terminal status and
+    // "already converted" state are re-read under a row lock INSIDE the
+    // transaction (lockJobForWrite), not from a stale pre-transaction read.
+    // This is what stops a manual "تحويل إلى مهمة" click and this automatic
+    // path from ever both passing their "not yet converted" check for the
+    // same job — see lockJobForWrite's doc comment — and it also mirrors
+    // convertQuoteToJob's own `if (job.isTerminal) return ...` guard, which
+    // this automatic path lacked entirely before: a customer signing a
+    // still-live link for a job the office had already cancelled/closed
+    // out would otherwise silently attach a conversion (and, next, a live
+    // factory request) to a closed deal.
+    // A plain `let` here would fall prey to a real TypeScript narrowing gap
+    // (confirmed against this project's exact TS version): control-flow
+    // analysis of a `let` reassigned only inside a nested async closure
+    // ignores those reassignments once execution returns to the enclosing
+    // scope, so every `convertState.outcome === "..."` check below would
+    // wrongly report "no overlap" against the initializer's literal type.
+    // Wrapping it in an object sidesteps that gap.
+    const convertState: {
+      outcome: "converted" | "terminal" | "already_converted" | "job_missing";
+    } = { outcome: "converted" };
     try {
       await db.transaction(async (tx) => {
+        const locked = await lockJobForWrite(tx, params.jobId);
+        if (!locked) {
+          convertState.outcome = "job_missing";
+          return;
+        }
+        if (locked.isTerminal) {
+          convertState.outcome = "terminal";
+          return;
+        }
+        if (params.signedVersionId === locked.sourceQuoteVersionId) {
+          convertState.outcome = "already_converted";
+          return;
+        }
         await applySignedQuoteToJob(tx, {
           jobId: params.jobId,
           quoteId: params.quoteId,
@@ -580,6 +623,44 @@ async function runPostSignAutomation(params: {
       return; // do not attempt the factory step on top of a failed conversion
     }
 
+    if (convertState.outcome === "job_missing") return; // defense in depth
+    if (convertState.outcome === "already_converted") {
+      // The manual button (or a concurrent automation run — the unique
+      // constraint on quote_signatures.quote_version_id already rules that
+      // second case out in practice) won this race first. Nothing left to
+      // do, and the factory step below would just no-op on its own lock too
+      // — stop here instead of notifying about something that already
+      // happened.
+      return;
+    }
+    if (convertState.outcome === "terminal") {
+      // The job was cancelled/closed out (e.g. via "إلغاء المهمة") after the
+      // quote was sent but before — or exactly as — the customer signed.
+      // Do NOT convert or send to factory: mirrors convertQuoteToJob's own
+      // isTerminal guard, and stops a closed deal's fields
+      // (dealClosedByUserId, salePriceTotal, a live factory link) from
+      // being silently populated on a job the office already closed out.
+      await recordAudit({
+        userId: null,
+        action: "quote.auto_convert_skipped_terminal_job",
+        entityType: "job",
+        entityId: params.jobId,
+        newValue: { quoteId: params.quoteId },
+      });
+      const closeDealHolders = await getUsersWithPermission(PERMISSIONS.CLOSE_DEAL);
+      await notifyUsers(
+        closeDealHolders.map((u) => u.id),
+        {
+          type: "quote_signed_job_terminal",
+          title: `تم توقيع عرض السعر للمهمة ${job.jobNumber} بعد إغلاقها — لم تتم أي معالجة تلقائية`,
+          body: "المهمة مغلقة (مكتملة أو ملغاة) فلم يتم تحويل العرض أو إرسال المهمة إلى المصنع تلقائياً.",
+          relatedEntityType: "job",
+          relatedEntityId: params.jobId,
+        },
+      );
+      return;
+    }
+
     // (c) Auto-send-to-factory — build the same kind of details text the
     // manual dialog prefills, then run the identical core logic.
     let details: string;
@@ -592,19 +673,38 @@ async function runPostSignAutomation(params: {
       details = "راجع صفحة المهمة للتفاصيل.";
     }
 
+    // Same lock-then-recheck pattern as step (b): the job row is locked and
+    // both the terminal status and "does a production request already
+    // exist for this job" checks are re-read INSIDE the transaction, so
+    // this step and a concurrent sendToFactoryAction click can never both
+    // pass their "not yet sent" check for the same job (createProductionRequest
+    // itself does no such check — every caller is responsible for it, per
+    // its own doc comment).
+    // Wrapped in an object for the same reason as convertState above.
+    const factoryState: {
+      outcome: "sent" | "terminal" | "already_sent" | "job_missing";
+    } = { outcome: "sent" };
     try {
-      // Guard against a duplicate request in the unlikely event one was
-      // already created by hand in the tiny window since step (b) — the
-      // manual action has this same guard; createProductionRequest itself
-      // does not (see its own doc comment).
-      const [existingRequest] = await db
-        .select({ id: productionRequests.id })
-        .from(productionRequests)
-        .where(eq(productionRequests.jobId, params.jobId))
-        .limit(1);
-      if (existingRequest) return;
-
       await db.transaction(async (tx) => {
+        const locked = await lockJobForWrite(tx, params.jobId);
+        if (!locked) {
+          factoryState.outcome = "job_missing";
+          return;
+        }
+        if (locked.isTerminal) {
+          factoryState.outcome = "terminal";
+          return;
+        }
+        const [existingRequest] = await tx
+          .select({ id: productionRequests.id })
+          .from(productionRequests)
+          .where(eq(productionRequests.jobId, params.jobId))
+          .limit(1);
+        if (existingRequest) {
+          factoryState.outcome = "already_sent";
+          return;
+        }
+
         await createProductionRequest(tx, {
           jobId: params.jobId,
           details,
@@ -627,6 +727,34 @@ async function runPostSignAutomation(params: {
           type: "production_request_auto_create_failed",
           title: `تم تحويل عرض المهمة ${job.jobNumber} إلى مهمة، لكن تعذر إرسالها إلى المصنع تلقائياً`,
           body: "المهمة بانتظار الإنتاج بالفعل — استخدم زر «إرسال إلى المصنع» على صفحة المهمة لإتمام الإرسال يدوياً.",
+          relatedEntityType: "job",
+          relatedEntityId: params.jobId,
+        },
+      );
+      return;
+    }
+
+    if (factoryState.outcome === "job_missing" || factoryState.outcome === "already_sent") return;
+    if (factoryState.outcome === "terminal") {
+      // The job was closed out in the narrow window between step (b) above
+      // and this one (e.g. cancelled mid-automation). The conversion above
+      // already committed — advanceJobStatus's forward-only rule kept the
+      // job's own status from moving backward, so it stays whatever
+      // terminal status it was set to — but do NOT create a live, unrevoked
+      // factory public link for a job that's now closed; notify instead.
+      await recordAudit({
+        userId: null,
+        action: "production_request.auto_create_skipped_terminal_job",
+        entityType: "job",
+        entityId: params.jobId,
+      });
+      const factoryHolders = await getUsersWithPermission(PERMISSIONS.CREATE_PRODUCTION_ORDER);
+      await notifyUsers(
+        factoryHolders.map((u) => u.id),
+        {
+          type: "production_request_auto_create_skipped_terminal_job",
+          title: `تم تحويل عرض المهمة ${job.jobNumber} إلى مهمة، لكنها أُغلقت قبل إرسالها إلى المصنع`,
+          body: "لم يتم إرسال طلب إنتاج تلقائياً لأن المهمة أصبحت مغلقة. راجع صفحة المهمة قبل أي إرسال يدوي.",
           relatedEntityType: "job",
           relatedEntityId: params.jobId,
         },
