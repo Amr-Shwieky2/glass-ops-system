@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Wallet, Building2, User as UserIcon } from "lucide-react";
 import type { AuthedUser } from "@/server/auth/session";
 import { can } from "@/server/auth/permissions";
@@ -70,9 +71,19 @@ export async function CashSection({ user }: { user: AuthedUser }) {
                       )}
                     </span>
                   </div>
-                  <span dir="ltr" className="font-bold text-foreground">
-                    {formatILS(b.balance)}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <span dir="ltr" className="font-bold text-foreground">
+                      {formatILS(b.balance)}
+                    </span>
+                    {b.ownerType === "user" && b.ownerUserId && (
+                      <Link
+                        href={`/finance/technicians/${b.ownerUserId}`}
+                        className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+                      >
+                        عرض حركة الصندوق
+                      </Link>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>

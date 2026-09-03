@@ -1,5 +1,5 @@
 import "server-only";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { cashAccounts, cashTransactions, users } from "@/server/db/schema";
 import { db } from "@/server/db/client";
 import { sumMoney, subtractMoney, type Money } from "@/server/money";
@@ -98,10 +98,28 @@ export async function getCashAccountBalanceForUser(userId: string): Promise<Mone
   return subtractMoney(totalIn, totalOut);
 }
 
-/** Full transaction history of one cash account, newest first (detail view). */
+export interface CashTransactionFilters {
+  /** Inclusive lower bound on createdAt. */
+  dateFrom?: Date;
+  /** Inclusive upper bound on createdAt. */
+  dateTo?: Date;
+  direction?: "in" | "out";
+}
+
+/**
+ * Full transaction history of one cash account, newest first (detail
+ * view/audit — section 34/35). Optional filters compose in SQL, not in JS,
+ * so a filtered view never has to fetch-then-discard rows.
+ */
 export async function getCashTransactionHistory(
   cashAccountId: string,
+  filters: CashTransactionFilters = {},
 ): Promise<CashTransaction[]> {
+  const conditions = [eq(cashTransactions.cashAccountId, cashAccountId)];
+  if (filters.dateFrom) conditions.push(gte(cashTransactions.createdAt, filters.dateFrom));
+  if (filters.dateTo) conditions.push(lte(cashTransactions.createdAt, filters.dateTo));
+  if (filters.direction) conditions.push(eq(cashTransactions.direction, filters.direction));
+
   return db
     .select({
       id: cashTransactions.id,
@@ -115,6 +133,21 @@ export async function getCashTransactionHistory(
       createdAt: cashTransactions.createdAt,
     })
     .from(cashTransactions)
-    .where(eq(cashTransactions.cashAccountId, cashAccountId))
+    .where(and(...conditions))
     .orderBy(desc(cashTransactions.createdAt));
+}
+
+/**
+ * The cash_accounts.id for a user's cash box, or null if they don't have
+ * one yet (lazily created on first cash movement — see
+ * getOrCreateCashAccountForUser in cash.ts, the write-path counterpart).
+ * A read-only lookup: never creates the account.
+ */
+export async function getCashAccountIdForUser(userId: string): Promise<string | null> {
+  const [account] = await db
+    .select({ id: cashAccounts.id })
+    .from(cashAccounts)
+    .where(eq(cashAccounts.ownerUserId, userId))
+    .limit(1);
+  return account?.id ?? null;
 }
