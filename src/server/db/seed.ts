@@ -9,6 +9,9 @@
  * Run with: npm run db:seed
  */
 import "dotenv/config";
+import { randomUUID } from "node:crypto";
+import path from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { sql } from "drizzle-orm";
@@ -204,14 +207,18 @@ async function main() {
     ["patterned", "Patterned", "منقوش"],
     ["other", "Other", "أخرى"],
   ] as const;
-  await db.insert(schema.glassTypes).values(
-    glassTypeDefs.map(([key, labelEn, labelAr], i) => ({
-      key,
-      labelEn,
-      labelAr,
-      sortOrder: i,
-    })),
-  );
+  const glassTypeRows = await db
+    .insert(schema.glassTypes)
+    .values(
+      glassTypeDefs.map(([key, labelEn, labelAr], i) => ({
+        key,
+        labelEn,
+        labelAr,
+        sortOrder: i,
+      })),
+    )
+    .returning();
+  const glassTypeByKey = Object.fromEntries(glassTypeRows.map((g) => [g.key, g]));
 
   console.log("Seeding compensation/penalty/bonus rules...");
   await db.insert(schema.compensationRules).values([
@@ -1011,6 +1018,62 @@ async function main() {
   });
 
   // ---------------------------------------------------------------------
+  // Job 9: سامر خطيب — a field submission created directly at
+  // field_submission_pending (New Measurement quick-submit flow, docs/
+  // superpowers/specs/2026-09-03-new-measurement-quick-submit-design.md),
+  // so the new status/glass-type/attachment/reference-price fields all
+  // have real demo data to look at without anyone having to submit one
+  // manually first. Mirrors exactly what submitFieldMeasurementAction
+  // itself would produce: measured by Basel (CREATE_MEASUREMENT-only, no
+  // CREATE_PRICE), no pricingResponsibleUserId set (a broadcast to every
+  // CREATE_PRICE holder, not an assignment — see the action's own
+  // comment), no title, a glassTypeId, an on-site reference price with its
+  // VAT-inclusion toggle, and one real attachment file written to disk
+  // under storage/measurement-attachments/ (not just a DB row pointing at
+  // nothing) using the same TINY_PNG placeholder bytes this script already
+  // uses for signature images.
+  // ---------------------------------------------------------------------
+  console.log("Seeding Job 9: Samer (field measurement quick-submit, pending review)...");
+  const [samer] = await db.insert(schema.customers).values({
+    name: "سامر خطيب", phone: "+972505559009", createdByUserId: basel.id,
+  }).returning();
+  const [samerJob] = await db.insert(schema.jobs).values({
+    jobNumber: "JOB-2026-0009", customerId: samer.id, statusId: statusByKey.field_submission_pending.id,
+    measuredByUserId: basel.id, createdByUserId: basel.id, createdAt: daysAgo(0),
+  }).returning();
+
+  const samerMeasurementId = randomUUID();
+  const samerAttachmentDir = path.join(
+    process.cwd(), "storage", "measurement-attachments", samerMeasurementId,
+  );
+  await mkdir(samerAttachmentDir, { recursive: true });
+  const samerAttachmentStoredName = `${randomUUID()}-site-photo.png`;
+  await writeFile(
+    path.join(samerAttachmentDir, samerAttachmentStoredName),
+    Buffer.from(TINY_PNG.split(",")[1], "base64"),
+  );
+
+  await db.insert(schema.measurements).values({
+    id: samerMeasurementId,
+    jobId: samerJob.id,
+    measuredByUserId: basel.id,
+    measuredAt: daysAgo(0),
+    details: "زجاج شباك المطبخ مكسور، العميل طلب معاينة سريعة وسعر تقديري.",
+    photosTaken: true,
+    glassTypeId: glassTypeByKey.tempered.id,
+    fieldQuotedPrice: "850.00",
+    fieldQuotedPriceIncludesVat: false,
+  });
+  await db.insert(schema.measurementAttachments).values({
+    measurementId: samerMeasurementId,
+    fileName: "site-photo.png",
+    storagePath: path.posix.join(samerMeasurementId, samerAttachmentStoredName),
+    mimeType: "image/png",
+    sizeBytes: Buffer.from(TINY_PNG.split(",")[1], "base64").length,
+    uploadedByUserId: basel.id,
+  });
+
+  // ---------------------------------------------------------------------
   // Phase 10a demo data: notifications. Every phase's Server Actions call
   // notifyUser()/notifyUsers() as a side effect of a real action (schedule
   // an appointment, submit a factory price, report a payment...), but this
@@ -1075,11 +1138,21 @@ async function main() {
       relatedEntityType: "job", relatedEntityId: nabilJob.id,
       isRead: false, createdAt: daysAgo(0),
     },
+    // Amr: unread broadcast for Samer's field submission (Job 9) — mirrors
+    // submitFieldMeasurementAction's own notifyUsers(pricerIds, ...) call
+    // to every CREATE_PRICE holder.
+    {
+      userId: amr.id, type: "field_measurement_submitted",
+      title: "قياس ميداني جديد بانتظار التسعير",
+      body: "تم إرسال قياس ميداني جديد من الموقع وهو بانتظار التسعير.",
+      relatedEntityType: "job", relatedEntityId: samerJob.id,
+      isRead: false, createdAt: daysAgo(0),
+    },
   ]);
 
   console.log("Seeding number sequences (continuing on from the demo jobs/quotes above, which use hardcoded numbers rather than nextDocumentNumber())...");
   await db.insert(schema.numberSequences).values([
-    { scope: "job", year: 2026, lastValue: 8 }, // JOB-2026-0001..0008 used above
+    { scope: "job", year: 2026, lastValue: 9 }, // JOB-2026-0001..0009 used above
     { scope: "quote", year: 2026, lastValue: 5 }, // Q-2026-0001..0005 used above
   ]);
 
