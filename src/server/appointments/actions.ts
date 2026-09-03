@@ -2,16 +2,18 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { appointments, appointmentAssignees, jobs, jobStatuses } from "@/server/db/schema";
 import { getCurrentUser } from "@/server/auth/session";
+import type { AuthedUser } from "@/server/auth/session";
 import { can, canAny } from "@/server/auth/permissions";
 import { PERMISSIONS, type PermissionKey } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
 import { notifyUsers } from "@/server/notifications";
 import { advanceJobStatus } from "@/server/jobs/status";
 import { getAssigneeConflicts } from "@/server/appointments/queries";
+import { COMPANY_TIMEZONE } from "@/lib/company-day";
 
 export interface ActionState {
   error?: string;
@@ -43,6 +45,18 @@ const APPOINTMENT_TYPE_TARGET_STATUS: Record<string, string | undefined> = {
   installation: "installation_scheduled",
   repair: "repair_scheduled",
 };
+
+// The four permissions that, together, cover "could have scheduled some
+// kind of appointment" — used as the broad admin-side fallback for actions
+// that are otherwise gated by "is this assigned to me" (cancel, arrive,
+// field notes), mirroring removeAssignment's leniency in
+// src/server/jobs/actions.ts.
+const SCHEDULING_PERMISSIONS: PermissionKey[] = [
+  PERMISSIONS.CREATE_MEASUREMENT,
+  PERMISSIONS.ASSIGN_INSTALLER,
+  PERMISSIONS.CREATE_REPAIR,
+  PERMISSIONS.VIEW_ALL_JOBS,
+];
 
 const APPOINTMENT_TYPE_LABEL_AR: Record<string, string> = {
   measurement: "قياس",
@@ -214,14 +228,7 @@ export async function cancelAppointmentAction(
   appointmentId: string,
 ): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (
-    !canAny(user, [
-      PERMISSIONS.CREATE_MEASUREMENT,
-      PERMISSIONS.ASSIGN_INSTALLER,
-      PERMISSIONS.CREATE_REPAIR,
-      PERMISSIONS.VIEW_ALL_JOBS,
-    ])
-  ) {
+  if (!canAny(user, SCHEDULING_PERMISSIONS)) {
     return { error: "لا تملك صلاحية إلغاء المواعيد." };
   }
 
@@ -247,5 +254,198 @@ export async function cancelAppointmentAction(
   revalidatePath("/calendar");
   revalidatePath("/my-day");
   revalidatePath("/dashboard");
+  return { success: true };
+}
+
+// ---------------------------------------------------------------------
+// "وصلت الموقع" (My Day, technician-facing) — appointment-level bookkeeping
+// only: it does NOT call advanceJobStatus, deliberately. The job pipeline
+// tracks measurement/installation/repair scheduled -> done; "technician is
+// physically on site" is a finer-grained signal than that pipeline models,
+// so it stays confined to the appointment row.
+// ---------------------------------------------------------------------
+
+/** Whether `userId` is one of `appointmentId`'s assignees. */
+async function isAppointmentAssignee(
+  appointmentId: string,
+  userId: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ userId: appointmentAssignees.userId })
+    .from(appointmentAssignees)
+    .where(
+      and(
+        eq(appointmentAssignees.appointmentId, appointmentId),
+        eq(appointmentAssignees.userId, userId),
+      ),
+    )
+    .limit(1);
+  return !!row;
+}
+
+export async function markAppointmentArrivedAction(
+  appointmentId: string,
+  _prevState: ActionState,
+  _formData: FormData,
+): Promise<ActionState> {
+  const user = await getCurrentUser();
+  if (!user) return { error: "يجب تسجيل الدخول." };
+
+  const [appointment] = await db
+    .select({ id: appointments.id, jobId: appointments.jobId })
+    .from(appointments)
+    .where(eq(appointments.id, appointmentId))
+    .limit(1);
+  if (!appointment) return { error: "الموعد غير موجود." };
+
+  // "You can always act on what's assigned to you" (matches
+  // completeInstallationAction's scoping via COMPLETE_INSTALLATION, here
+  // applied directly against appointment_assignees since marking arrival
+  // shouldn't require any broad admin permission) — OR one of the four
+  // scheduling permissions, for dispatchers/admins acting on someone
+  // else's appointment.
+  const isAssignee = await isAppointmentAssignee(appointmentId, user.id);
+  if (!isAssignee && !canAny(user, SCHEDULING_PERMISSIONS)) {
+    return { error: "لا تملك صلاحية تحديث حالة هذا الموعد." };
+  }
+
+  const now = new Date();
+
+  // Guards against a double-tap race: the UPDATE only affects an
+  // appointment still 'scheduled', and its result tells us whether we
+  // actually won that race — the plain SELECT above is just a fast-fail
+  // for the common case, not the real guard (mirrors decideCustomerPaymentAction
+  // in src/server/approvals/decide.ts and completeInstallationAction in
+  // src/server/appointments/complete-installation.ts).
+  let alreadyHandled = false;
+  await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(appointments)
+      .set({ status: "arrived", arrivedAt: now, updatedAt: now })
+      .where(and(eq(appointments.id, appointmentId), eq(appointments.status, "scheduled")))
+      .returning({ id: appointments.id });
+
+    if (!updated) {
+      alreadyHandled = true;
+      return;
+    }
+
+    await recordAudit(
+      {
+        userId: user.id,
+        action: "appointment.arrive",
+        entityType: "job",
+        entityId: appointment.jobId,
+        newValue: { appointmentId, arrivedAt: now },
+      },
+      tx,
+    );
+  });
+
+  if (alreadyHandled) {
+    return { error: "تم تحديث حالة هذا الموعد بالفعل — لا يمكن تكرار ذلك." };
+  }
+
+  revalidatePath(`/jobs/${appointment.jobId}`);
+  revalidatePath("/my-day");
+  revalidatePath("/calendar");
+  return { success: true };
+}
+
+// ---------------------------------------------------------------------
+// "رفع ملاحظة" (My Day, technician-facing) — a lightweight text-only field
+// note appended to the job (section 5's `jobs.notes`). jobs.notes is a
+// single freeform column already overwritten wholesale elsewhere (see
+// cancelJob in src/server/jobs/actions.ts, which sets it to the
+// cancellation reason) rather than treated as a running log anywhere in
+// this codebase — so a second technician's note must never be lost to a
+// stale read-then-write. Rather than stand up a new dedicated table for
+// one field's worth of running history (real, but out of proportion to
+// "one tap, minimal fields, doesn't lose prior notes"), this appends via a
+// single atomic UPDATE ... SET notes = concat_ws(...) expression evaluated
+// entirely inside Postgres — there is no intermediate SELECT-then-write of
+// the notes value, so two people adding a note at the same instant can
+// never clobber one another (concat_ws also quietly drops a NULL prior
+// value, so the first note on a job needs no special-casing).
+// ---------------------------------------------------------------------
+
+const AddFieldNoteSchema = z.object({
+  note: z.string().trim().min(1, { error: "نص الملاحظة مطلوب" }),
+});
+
+const fieldNoteTimestampFmt = new Intl.DateTimeFormat("ar", {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  numberingSystem: "latn",
+  timeZone: COMPANY_TIMEZONE,
+});
+
+function formatFieldNoteEntry(note: string, author: AuthedUser, at: Date): string {
+  return `[${fieldNoteTimestampFmt.format(at)}] ${author.name}: ${note}`;
+}
+
+/** Whether `userId` is an assignee on any (non-cancelled or not) appointment
+ * belonging to `jobId` — job-level, not appointment-level, since a field
+ * note isn't tied to one specific visit. */
+async function isAssignedToJob(jobId: string, userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ userId: appointmentAssignees.userId })
+    .from(appointmentAssignees)
+    .innerJoin(appointments, eq(appointmentAssignees.appointmentId, appointments.id))
+    .where(and(eq(appointments.jobId, jobId), eq(appointmentAssignees.userId, userId)))
+    .limit(1);
+  return !!row;
+}
+
+export async function addFieldNoteAction(
+  jobId: string,
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const user = await getCurrentUser();
+  if (!user) return { error: "يجب تسجيل الدخول." };
+
+  const parsed = AddFieldNoteSchema.safeParse({ note: formData.get("note") });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" };
+  }
+
+  const [job] = await db.select({ id: jobs.id }).from(jobs).where(eq(jobs.id, jobId)).limit(1);
+  if (!job) return { error: "المهمة غير موجودة." };
+
+  const assigned = await isAssignedToJob(jobId, user.id);
+  if (!assigned && !canAny(user, SCHEDULING_PERMISSIONS)) {
+    return { error: "لا تملك صلاحية إضافة ملاحظات على هذه المهمة." };
+  }
+
+  const now = new Date();
+  const entry = formatFieldNoteEntry(parsed.data.note, user, now);
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(jobs)
+      .set({
+        notes: sql`concat_ws(E'\n\n', ${jobs.notes}, ${entry}::text)`,
+        updatedAt: now,
+      })
+      .where(eq(jobs.id, jobId));
+
+    await recordAudit(
+      {
+        userId: user.id,
+        action: "job.add_field_note",
+        entityType: "job",
+        entityId: jobId,
+        newValue: { note: parsed.data.note },
+      },
+      tx,
+    );
+  });
+
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/my-day");
   return { success: true };
 }

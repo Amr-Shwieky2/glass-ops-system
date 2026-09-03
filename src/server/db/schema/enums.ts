@@ -55,8 +55,13 @@ export const appointmentTypeEnum = pgEnum("appointment_type", [
   "other",
 ]);
 
+// Application-level progression is scheduled -> arrived -> completed, with
+// cancelled a separate terminal branch reachable from either scheduled or
+// arrived. pgEnum values carry no inherent order beyond declaration, but
+// this declaration order mirrors that progression for readability.
 export const appointmentStatusEnum = pgEnum("appointment_status", [
   "scheduled",
+  "arrived",
   "completed",
   "cancelled",
 ]);

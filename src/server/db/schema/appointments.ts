@@ -25,6 +25,10 @@ export const appointments = pgTable(
     scheduledEnd: timestamp("scheduled_end", { withTimezone: true }),
     location: text("location"), // defaults to job/customer address in the UI
     status: appointmentStatusEnum("status").notNull().default("scheduled"),
+    // Set only by markAppointmentArrivedAction, the moment status flips
+    // scheduled -> arrived. Null until then and forever after for any
+    // appointment that skips straight to completed/cancelled.
+    arrivedAt: timestamp("arrived_at", { withTimezone: true }),
     notes: text("notes"),
     createdByUserId: uuid("created_by_user_id").references(() => users.id, {
       onDelete: "set null",

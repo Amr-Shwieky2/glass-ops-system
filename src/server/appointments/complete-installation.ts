@@ -46,7 +46,11 @@ export async function completeInstallationAction(params: {
     .where(eq(appointments.id, params.appointmentId))
     .limit(1);
   if (!appointment) return { error: "الموعد غير موجود." };
-  if (appointment.status !== "scheduled") {
+  // A technician may complete the installation directly from 'scheduled'
+  // (arrival tracking is optional), or after marking 'arrived' via
+  // markAppointmentArrivedAction — either is a valid pre-completion state.
+  // Only 'completed'/'cancelled' are actually terminal here.
+  if (appointment.status !== "scheduled" && appointment.status !== "arrived") {
     return { error: "تم التعامل مع هذا الموعد بالفعل." };
   }
 
@@ -68,18 +72,21 @@ export async function completeInstallationAction(params: {
 
   let autoApprovedPayment = true;
   // Guards against a double-submit race: the UPDATE only affects an
-  // appointment still 'scheduled', and its result tells us whether we
-  // actually won that race — the plain SELECT above is just a fast-fail
-  // for the common case, not the real guard. If we lost the race, skip
-  // every other write in this transaction (job items, payment, job status,
-  // audit) so nothing is double-recorded.
+  // appointment still 'scheduled' or 'arrived', and its result tells us
+  // whether we actually won that race — the plain SELECT above is just a
+  // fast-fail for the common case, not the real guard. If we lost the
+  // race, skip every other write in this transaction (job items, payment,
+  // job status, audit) so nothing is double-recorded.
   let alreadyCompleted = false;
   await db.transaction(async (tx) => {
     const [updated] = await tx
       .update(appointments)
       .set({ status: "completed", updatedAt: new Date() })
       .where(
-        and(eq(appointments.id, params.appointmentId), eq(appointments.status, "scheduled")),
+        and(
+          eq(appointments.id, params.appointmentId),
+          inArray(appointments.status, ["scheduled", "arrived"]),
+        ),
       )
       .returning({ id: appointments.id });
 

@@ -142,6 +142,7 @@ export interface MyDayAppointment {
   status: string;
   scheduledStart: Date;
   scheduledEnd: Date | null;
+  arrivedAt: Date | null;
   location: string | null;
   customerName: string;
   customerPhone: string;
@@ -213,6 +214,7 @@ export async function getMyDayAppointments(
       status: appointments.status,
       scheduledStart: appointments.scheduledStart,
       scheduledEnd: appointments.scheduledEnd,
+      arrivedAt: appointments.arrivedAt,
       location: appointments.location,
       jobAddress: jobs.address,
       jobLatitude: jobs.latitude,
@@ -263,6 +265,7 @@ export async function getMyDayAppointments(
     status: r.status,
     scheduledStart: r.scheduledStart,
     scheduledEnd: r.scheduledEnd,
+    arrivedAt: r.arrivedAt,
     location: r.location ?? r.jobAddress ?? r.customerAddress,
     customerName: r.customerName,
     customerPhone: r.customerPhone,

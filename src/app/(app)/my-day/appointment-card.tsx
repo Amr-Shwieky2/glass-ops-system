@@ -1,11 +1,13 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, MapPin } from "lucide-react";
 import type { MyDayAppointment } from "@/server/appointments/queries";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LocationButtons } from "@/components/location-buttons";
 import { CompleteInstallationDialog } from "./complete-installation-dialog";
+import { ArrivedButton } from "./arrived-button";
+import { AddFieldNoteDialog } from "./add-field-note-dialog";
 
 const timeFmt = new Intl.DateTimeFormat("ar", {
   hour: "2-digit",
@@ -40,8 +42,17 @@ export function AppointmentCard({
   canCompleteInstallation: boolean;
 }) {
   const a = appointment;
+  // 'arrived' is a valid pre-completion state too (arrival tracking is
+  // optional — a technician can complete straight from 'scheduled').
   const canComplete =
-    canCompleteInstallation && a.type === "installation" && a.status === "scheduled";
+    canCompleteInstallation &&
+    a.type === "installation" &&
+    (a.status === "scheduled" || a.status === "arrived");
+  // getMyDayAppointments only ever returns appointments the current user is
+  // assigned to (see its exists() clause in queries.ts), so every card
+  // rendered here already satisfies "current user is one of its
+  // assignees" — no separate prop needed for that half of the gate.
+  const canMarkArrived = a.status === "scheduled";
 
   return (
     <Card>
@@ -76,6 +87,13 @@ export function AppointmentCard({
           size="default"
         />
 
+        {a.status === "arrived" && a.arrivedAt && (
+          <p className="flex items-center gap-1.5 text-sm font-medium text-success">
+            <MapPin className="size-4" />
+            وصلت الموقع الساعة {timeFmt.format(a.arrivedAt)}
+          </p>
+        )}
+
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <Button variant="outline" asChild>
             <Link href={`/jobs/${a.jobId}`}>
@@ -83,6 +101,8 @@ export function AppointmentCard({
               <ArrowLeft className="size-4 rotate-180" />
             </Link>
           </Button>
+          {canMarkArrived && <ArrivedButton appointmentId={a.id} />}
+          <AddFieldNoteDialog jobId={a.jobId} />
           {canComplete && (
             <CompleteInstallationDialog
               appointmentId={a.id}

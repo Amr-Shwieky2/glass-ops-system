@@ -93,7 +93,7 @@ export function CompleteInstallationDialog({
       <DialogTrigger asChild>
         <Button>
           <CheckCircle2 className="size-4" />
-          إكمال التركيب
+          تم التركيب
         </Button>
       </DialogTrigger>
       <DialogContent>
