@@ -42,9 +42,15 @@
 //      correctly, and quote_signatures.customer_national_id_at_signing is
 //      the SAME pre-existing column the Arabic flow uses (checked directly
 //      against information_schema — no new Hebrew-specific column exists).
-//   4. localStorage autofill: signing one quote in a browser context
-//      prefills name/phone/national-id (but never address) on a SECOND,
-//      different quote's sign page opened later in that same context.
+//   4. localStorage autofill, scoped by customerId: signing one quote
+//      prefills name/phone/national-id (but never address) on a LATER
+//      quote for the SAME customer opened in that same browser context —
+//      and does NOT prefill any of it onto a different customer's quote
+//      opened in that same context. (The original implementation cached
+//      this under one global, unparameterized browser key and leaked one
+//      customer's legal signing fields into a different customer's form;
+//      this script's checks 6-7 exercise both the fixed convenience case
+//      and the fixed leak case directly.)
 //
 // No executablePath override (let Playwright resolve its own managed
 // browser), same as verify-phase5/6/7/8/9/10a.mjs.
@@ -101,6 +107,27 @@ async function createLeadJob(page, { customerName, customerPhone, title }) {
   return { jobId, jobNumber, href: `/jobs/${jobId}` };
 }
 
+/** Creates a SECOND job for an ALREADY-EXISTING customer (picked via the
+ * real /jobs/new "عميل موجود" CustomerCombobox, searched by phone) — used
+ * to prove the returning-customer localStorage cache still fires for the
+ * SAME customer's later quote, now that it's scoped by customerId rather
+ * than being one global per-browser key. "existing" is already the
+ * form's default mode, but this clicks it explicitly for robustness. */
+async function createJobForExistingCustomer(page, { customerPhone, title }) {
+  await page.goto(`${BASE_URL}/jobs/new`, { waitUntil: "networkidle" });
+  await page.click('button:has-text("عميل موجود")');
+  await page.fill('input[placeholder="ابحث بالاسم أو رقم الهاتف..."]', customerPhone);
+  await page.waitForSelector(`li button:has-text("${customerPhone}")`, { timeout: 10000 });
+  await page.click(`li button:has-text("${customerPhone}")`);
+  await page.fill("#title", title);
+  await Promise.all([
+    page.waitForURL(/\/jobs\/[0-9a-f-]{36}$/, { timeout: 10000 }),
+    page.click('button:has-text("إنشاء المهمة")'),
+  ]);
+  const jobId = new URL(page.url()).pathname.split("/").pop();
+  return { jobId, href: `/jobs/${jobId}` };
+}
+
 /** Draws a couple of strokes on the signature <canvas> so it's non-empty —
  * identical to verify-phase5.mjs's drawSignature. */
 async function drawSignature(page) {
@@ -143,9 +170,10 @@ async function main() {
     await login(page, "0501111111", "password123");
 
     console.log("Setup: a brand-new job for the AI-draft + Hebrew flow (job A)...");
+    const jobACustomerPhone = uniquePhone();
     const jobA = await createLeadJob(page, {
       customerName: uniqueLabel("عميل عبري أ"),
-      customerPhone: uniquePhone(),
+      customerPhone: jobACustomerPhone,
       title: "تركيب باب زجاجي منزلق للمطبخ",
     });
 
@@ -342,17 +370,71 @@ async function main() {
       publicPdfBuf.slice(0, 4).toString("latin1") === "%PDF",
     );
 
-    console.log("=== A second, unrelated job/quote, to test localStorage autofill across quotes ===");
+    console.log("=== A second job for the SAME customer as job A, to test the fixed (customer-scoped) autofill ===");
+    const jobA2 = await createJobForExistingCustomer(page, {
+      customerPhone: jobACustomerPhone,
+      title: "زجاج إضافي لنفس العميل",
+    });
+    const { rows: custA2Rows } = await pool.query(
+      `select c.address from customers c join jobs j on j.customer_id = c.id where j.id = $1`,
+      [jobA2.jobId],
+    );
+    const jobA2ExpectedAddress = custA2Rows[0]?.address ?? "";
+
+    await page.click('button:has-text("إنشاء عرض سعر")');
+    dialog = page.locator('[role="dialog"]');
+    await dialog.locator('input[placeholder="الوصف"]').fill("זכוכית נוספת לאותו לקוח");
+    await dialog.locator('input[placeholder="الكمية"]').fill("1");
+    await dialog.locator('input[placeholder="السعر"]').fill("400");
+    await selectHebrew(dialog, page);
+    await dialog.locator('button:has-text("حفظ عرض السعر")').click();
+    await page.waitForTimeout(700);
+    await page.click('button:has-text("إرسال للعميل")');
+    await page.waitForSelector("text=رابط توقيع العرض جاهز", { timeout: 10000 });
+    const linkA2 = await page.locator("input[readonly]").inputValue();
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(300);
+
+    console.log(
+      "6. localStorage autofill (fixed): name/phone/ID carry over onto a LATER quote for the SAME customer...",
+    );
+    // SAME customerCtx/customerPage that just signed job A above — this is
+    // the convenience the returning-customer cache is FOR: job A2 is a
+    // second job/quote for that exact same customer (same customerId),
+    // just created via the "عميل موجود" combobox rather than typed fresh.
+    await customerPage.goto(linkA2, { waitUntil: "networkidle" });
+    const sameCustomerNameVal = await customerPage.locator("#customerNameAtSigning").inputValue();
+    const sameCustomerPhoneVal = await customerPage.locator("#customerPhoneAtSigning").inputValue();
+    const sameCustomerIdVal = await customerPage.locator("#customerNationalIdAtSigning").inputValue();
+    const sameCustomerAddrVal = await customerPage.locator("#customerAddressAtSigning").inputValue();
+    check(
+      "name auto-filled from localStorage for the SAME customer's later quote",
+      sameCustomerNameVal === SIGNER_A.name,
+    );
+    check("phone auto-filled from localStorage for the same customer", sameCustomerPhoneVal === SIGNER_A.phone);
+    check(
+      "national id auto-filled from localStorage for the same customer",
+      sameCustomerIdVal === SIGNER_A.id,
+    );
+    check(
+      "address is NEVER cached — always this job's own server-supplied default, even for the same customer",
+      sameCustomerAddrVal === jobA2ExpectedAddress && sameCustomerAddrVal !== SIGNER_A.address,
+    );
+
+    console.log("=== A second, UNRELATED customer's job/quote, to prove the cross-customer leak is fixed ===");
+    const jobBCustomerName = uniqueLabel("عميل عبري ب");
     const jobB = await createLeadJob(page, {
-      customerName: uniqueLabel("عميل عبري ب"),
+      customerName: jobBCustomerName,
       customerPhone: uniquePhone(),
       title: "زجاج ثابت لمرفق إضافي",
     });
     const { rows: custBRows } = await pool.query(
-      `select c.address from customers c join jobs j on j.customer_id = c.id where j.id = $1`,
+      `select c.name, c.phone, c.address from customers c join jobs j on j.customer_id = c.id where j.id = $1`,
       [jobB.jobId],
     );
     const jobBExpectedAddress = custBRows[0]?.address ?? "";
+    const jobBExpectedName = custBRows[0]?.name ?? "";
+    const jobBExpectedPhone = custBRows[0]?.phone ?? "";
 
     await page.click('button:has-text("إنشاء عرض سعر")');
     dialog = page.locator('[role="dialog"]');
@@ -368,19 +450,34 @@ async function main() {
     await page.keyboard.press("Escape");
     await page.waitForTimeout(300);
 
-    console.log("6. localStorage autofill: name/phone/ID carry over from job A's signing, address does NOT...");
-    // SAME customerCtx/customerPage that just signed job A above — the
-    // whole point of this check.
+    console.log(
+      "7. localStorage autofill (fixed): NEVER carries over onto a DIFFERENT customer's quote — the PII leak...",
+    );
+    // Still the SAME customerCtx/customerPage — it has now cached BOTH
+    // SIGNER_A's profile (keyed by customer A's id) and whatever it wrote
+    // for job A2's signing (also customer A's id, so it just overwrote the
+    // same entry). Job B belongs to a completely different customer id, so
+    // none of that may leak in — this is the exact scenario the original
+    // (global-key) bug got wrong.
     await customerPage.goto(linkB, { waitUntil: "networkidle" });
     const nameVal = await customerPage.locator("#customerNameAtSigning").inputValue();
     const phoneVal = await customerPage.locator("#customerPhoneAtSigning").inputValue();
     const idVal = await customerPage.locator("#customerNationalIdAtSigning").inputValue();
     const addrVal = await customerPage.locator("#customerAddressAtSigning").inputValue();
-    check("name auto-filled from the previous signing (localStorage), not job B's own customer", nameVal === SIGNER_A.name);
-    check("phone auto-filled from localStorage", phoneVal === SIGNER_A.phone);
-    check("national id auto-filled from localStorage", idVal === SIGNER_A.id);
     check(
-      "address NOT carried over from localStorage — always job B's own server-supplied default instead",
+      "name is job B's OWN server-verified customer name, not SIGNER_A's cached name",
+      nameVal === jobBExpectedName && nameVal !== SIGNER_A.name,
+    );
+    check(
+      "phone is job B's OWN server-verified customer phone, not SIGNER_A's cached phone",
+      phoneVal === jobBExpectedPhone && phoneVal !== SIGNER_A.phone,
+    );
+    check(
+      "national id is left EMPTY for an unrelated customer, not silently filled with SIGNER_A's ID",
+      idVal === "" && idVal !== SIGNER_A.id,
+    );
+    check(
+      "address is job B's own server-supplied default, same as before this fix",
       addrVal === jobBExpectedAddress && addrVal !== SIGNER_A.address,
     );
 

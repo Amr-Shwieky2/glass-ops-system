@@ -200,6 +200,7 @@ export default async function PublicQuotePage({
       <SignForm
         token={token}
         language={language}
+        customerId={data.customer?.id ?? null}
         defaultName={data.customer?.name ?? ""}
         defaultPhone={data.customer?.phone ?? ""}
         defaultAddress={data.customer?.address ?? ""}

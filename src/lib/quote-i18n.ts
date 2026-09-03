@@ -79,10 +79,19 @@ export interface QuoteLabels {
      * too (ח.פ), same field, no schema change; the Arabic label is left
      * exactly as it already reads today. */
     nationalIdLabel: string;
+    /** inline example clarifying a business/company number is also
+     * accepted, "مثال: 302345678 أو رقم الشركة" / "לדוגמה: 302345678 או
+     * מספר ח.פ" — shown as the Input's placeholder, not a hard example
+     * value (the field stays optional and free-form). */
+    nationalIdPlaceholder: string;
     /** "العنوان" / "כתובת" */
     addressLabel: string;
     /** label above the signature pad, "التوقيع" / "חתימה" */
     signaturePadLabel: string;
+    /** clear-signature button text on the pad, "مسح التوقيع" / "מחיקת
+     * החתימה" — passed into the shared SignaturePad so it isn't
+     * hardcoded Arabic on the Hebrew signing page. */
+    clearSignatureLabel: string;
     /** agreement checkbox text */
     agreementText: string;
     /** submit button, idle state */
@@ -132,8 +141,10 @@ const AR: QuoteLabels = {
     fullNameLabel: "الاسم",
     phoneLabel: "رقم الهاتف",
     nationalIdLabel: "رقم الهوية (اختياري)",
+    nationalIdPlaceholder: "مثال: 302345678 أو رقم السجل التجاري",
     addressLabel: "العنوان",
     signaturePadLabel: "التوقيع",
+    clearSignatureLabel: "مسح التوقيع",
     agreementText: "أوافق على بنود عرض السعر وشروط الدفع والعمل الموضحة أعلاه.",
     submitLabel: "توقيع والموافقة على العرض",
     submitPendingLabel: "جارٍ الحفظ...",
@@ -181,8 +192,10 @@ const HE: QuoteLabels = {
     fullNameLabel: "שם מלא",
     phoneLabel: "טלפון",
     nationalIdLabel: "ת.ז / ח.פ (אופציונלי)",
+    nationalIdPlaceholder: "לדוגמה: 302345678 או מספר ח.פ",
     addressLabel: "כתובת",
     signaturePadLabel: "חתימה",
+    clearSignatureLabel: "מחיקת החתימה",
     agreementText: "אני מאשר/ת את סעיפי הצעת המחיר ואת תנאי התשלום והעבודה המפורטים לעיל.",
     submitLabel: "חתימה ואישור ההצעה",
     submitPendingLabel: "שומר...",

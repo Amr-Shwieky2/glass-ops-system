@@ -18,10 +18,25 @@ const initialState: ActionState = {};
 
 // Returning-customer convenience only — never the address (the customer is
 // expected to re-confirm/update the installation address on every quote,
-// not silently reuse a stale one). Namespaced and versioned so a future
-// shape change can invalidate old entries cleanly. Private to this origin's
-// browser storage — never sent anywhere, never read server-side.
-const PROFILE_STORAGE_KEY = "glassops.publicQuoteSign.customerProfile.v1";
+// not silently reuse a stale one). Namespaced PER CUSTOMER (see
+// profileStorageKey below) and versioned so a future shape change can
+// invalidate old entries cleanly. Private to this origin's browser storage
+// — never sent anywhere, never read server-side.
+//
+// IMPORTANT: this key MUST be scoped by customerId, not a single global
+// key. A public signing link is opened on shared/office devices as often
+// as personal ones, and this cache holds the "legal fields"
+// (name/phone/national-ID) that get written verbatim into the signature
+// record. A global key would prefill one customer's legal identity into a
+// completely different customer's signing form the next time that browser
+// opens a different quote's link — see the v1 bug this replaced. Keying by
+// customerId means the autofill only ever fires for the SAME customer
+// signing a later quote of their own.
+const PROFILE_STORAGE_PREFIX = "glassops.publicQuoteSign.customerProfile.v2.";
+
+function profileStorageKey(customerId: string): string {
+  return `${PROFILE_STORAGE_PREFIX}${customerId}`;
+}
 
 interface StoredCustomerProfile {
   name: string;
@@ -29,9 +44,10 @@ interface StoredCustomerProfile {
   idNumber: string;
 }
 
-function readStoredProfile(): StoredCustomerProfile | null {
+function readStoredProfile(customerId: string | null): StoredCustomerProfile | null {
+  if (!customerId) return null;
   try {
-    const raw = window.localStorage.getItem(PROFILE_STORAGE_KEY);
+    const raw = window.localStorage.getItem(profileStorageKey(customerId));
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null) return null;
@@ -48,9 +64,10 @@ function readStoredProfile(): StoredCustomerProfile | null {
   }
 }
 
-function writeStoredProfile(profile: StoredCustomerProfile): void {
+function writeStoredProfile(customerId: string | null, profile: StoredCustomerProfile): void {
+  if (!customerId) return;
   try {
-    window.localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
+    window.localStorage.setItem(profileStorageKey(customerId), JSON.stringify(profile));
   } catch {
     // Storage unavailable — the signature itself already saved server-side,
     // so this is a silently-skipped convenience, not a failure.
@@ -78,12 +95,19 @@ function SubmitButton({
 export function SignForm({
   token,
   language,
+  customerId,
   defaultName,
   defaultPhone,
   defaultAddress,
 }: {
   token: string;
   language: QuoteLanguage;
+  /** The server-verified customer this quote actually belongs to — used
+   * ONLY to namespace the local returning-customer cache (never sent
+   * anywhere). Null when the quote has no linked customer record, in which
+   * case the cache is skipped entirely rather than falling back to some
+   * shared key. */
+  customerId: string | null;
   defaultName: string;
   defaultPhone: string;
   defaultAddress: string;
@@ -104,9 +128,15 @@ export function SignForm({
   // defaults, same as before; this also sidesteps the extra post-mount
   // render a setState-in-effect would cost (react-hooks/set-state-in-effect
   // — same reasoning as src/lib/use-close-on-success.ts).
-  const [name, setName] = React.useState(() => readStoredProfile()?.name || defaultName);
-  const [phone, setPhone] = React.useState(() => readStoredProfile()?.phone || defaultPhone);
-  const [idNumber, setIdNumber] = React.useState(() => readStoredProfile()?.idNumber || "");
+  const [name, setName] = React.useState(
+    () => readStoredProfile(customerId)?.name || defaultName,
+  );
+  const [phone, setPhone] = React.useState(
+    () => readStoredProfile(customerId)?.phone || defaultPhone,
+  );
+  const [idNumber, setIdNumber] = React.useState(
+    () => readStoredProfile(customerId)?.idNumber || "",
+  );
 
   // Wraps the server action so the "remember this profile for next time"
   // write happens as a plain side effect of the submit itself, not in a
@@ -122,7 +152,7 @@ export function SignForm({
     async (prevState: ActionState, formData: FormData) => {
       const result = await signQuotePublicly(token, prevState, formData);
       if (result.success) {
-        writeStoredProfile({
+        writeStoredProfile(customerId, {
           name: String(formData.get("customerNameAtSigning") ?? "").trim(),
           phone: String(formData.get("customerPhoneAtSigning") ?? "").trim(),
           idNumber: String(formData.get("customerNationalIdAtSigning") ?? "").trim(),
@@ -130,7 +160,7 @@ export function SignForm({
       }
       return result;
     },
-    [token],
+    [token, customerId],
   );
   const [state, formAction] = useActionState(action, initialState);
 
@@ -185,6 +215,7 @@ export function SignForm({
                 id="customerNationalIdAtSigning"
                 name="customerNationalIdAtSigning"
                 dir="ltr"
+                placeholder={labels.signingForm.nationalIdPlaceholder}
                 value={idNumber}
                 onChange={(e) => setIdNumber(e.target.value)}
               />
@@ -202,7 +233,10 @@ export function SignForm({
 
           <div className="space-y-2">
             <Label>{labels.signingForm.signaturePadLabel}</Label>
-            <SignaturePad onChange={setSignature} />
+            <SignaturePad
+              onChange={setSignature}
+              clearLabel={labels.signingForm.clearSignatureLabel}
+            />
           </div>
 
           <div className="flex items-start gap-2">

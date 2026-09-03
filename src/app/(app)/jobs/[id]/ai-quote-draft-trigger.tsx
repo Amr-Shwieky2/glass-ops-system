@@ -129,6 +129,7 @@ export function AiQuoteDraftTrigger({
                 rows={5}
                 required
                 placeholder="مثال: تركيب واجهة زجاجية للمطبخ بمقاس 3×2 متر مع باب منزلق..."
+                value={jobDescription}
                 onChange={(e) => setJobDescription(e.target.value)}
               />
             </div>

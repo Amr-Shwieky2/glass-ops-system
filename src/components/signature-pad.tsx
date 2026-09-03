@@ -9,6 +9,11 @@ interface SignaturePadProps {
   /** Called with a trimmed PNG data URL once there's a stroke on the pad,
    * or null once cleared / while empty. */
   onChange: (dataUrl: string | null) => void;
+  /** Text for the clear button — this component is also used on the
+   * Hebrew public signing page, so callers must supply a
+   * language-appropriate label rather than relying on a hardcoded
+   * default. */
+  clearLabel: string;
 }
 
 /**
@@ -18,7 +23,7 @@ interface SignaturePadProps {
  * mount/resize instead of using a fixed size — mobile-first (section 1)
  * means this has to work from a ~320px phone screen up to desktop.
  */
-export function SignaturePad({ onChange }: SignaturePadProps) {
+export function SignaturePad({ onChange, clearLabel }: SignaturePadProps) {
   const wrapperRef = React.useRef<HTMLDivElement>(null);
   const padRef = React.useRef<SignatureCanvas>(null);
   // Starts unmeasured (null), not a guessed default: react-signature-canvas
@@ -76,7 +81,7 @@ export function SignaturePad({ onChange }: SignaturePadProps) {
       </div>
       <Button type="button" variant="outline" size="sm" onClick={handleClear}>
         <Eraser className="size-4" />
-        مسح التوقيع
+        {clearLabel}
       </Button>
     </div>
   );

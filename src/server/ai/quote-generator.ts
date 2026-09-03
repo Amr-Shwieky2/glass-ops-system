@@ -101,6 +101,62 @@ function tryParseDraftedQuote(raw: string): DraftedQuote | null {
 }
 
 /**
+ * Repairs the single most common way qwen2.5:3b breaks its own JSON despite
+ * the system prompt explicitly forbidding it: emitting a literal, unescaped
+ * `"` inside a string value — almost always a Hebrew ש"מ/ח"פ-style
+ * abbreviation (e.g. `"unit": "ש"מ"`). A direct JSON.parse of that fails
+ * immediately, so before giving up this walks the raw text tracking
+ * whether it is inside a JSON string, and for every `"` encountered while
+ * inside one, escapes it UNLESS it is genuinely the string's closing
+ * quote — decided by looking past any following whitespace for the next
+ * structurally-significant character (`,` `:` `}` `]`, or end of input),
+ * which is exactly what a real closing quote is always followed by.
+ * Already-escaped quotes (`\"`) are left untouched. This only ever adds
+ * backslashes inside string content; it cannot alter numbers, structural
+ * punctuation, or keys, so it cannot turn a validly-parsing document into
+ * something that means something different — it can only turn a
+ * currently-unparseable document into a parseable one.
+ */
+function repairInlineQuotes(raw: string): string {
+  let result = "";
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (!inString) {
+      result += ch;
+      if (ch === '"') inString = true;
+      continue;
+    }
+    if (escaped) {
+      result += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      result += ch;
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      let j = i + 1;
+      while (j < raw.length && /\s/.test(raw[j])) j++;
+      const next = j < raw.length ? raw[j] : undefined;
+      const isRealClose = next === undefined || next === "," || next === ":" || next === "}" || next === "]";
+      if (isRealClose) {
+        result += ch;
+        inString = false;
+      } else {
+        result += '\\"';
+      }
+      continue;
+    }
+    result += ch;
+  }
+  return result;
+}
+
+/**
  * Generates an itemized quote draft in Hebrew from a free-text job
  * description (and whatever measurement context is available for the
  * job). Draft-assist only (see AGENTS.md / src/server/quotes/ai-draft-
@@ -116,6 +172,7 @@ export async function generateHebrewQuoteDraft(
     rawResponse = await generateText({
       systemPrompt: SYSTEM_PROMPT,
       userPrompt: buildUserPrompt(input),
+      jsonMode: true,
     });
   } catch (err) {
     if (err instanceof AiProviderError) {
@@ -127,10 +184,21 @@ export async function generateHebrewQuoteDraft(
   const direct = tryParseDraftedQuote(rawResponse);
   if (direct) return direct;
 
-  // One cheap recovery attempt: smaller local models sometimes wrap the
-  // JSON in a markdown code fence despite being told not to.
-  const recovered = tryParseDraftedQuote(stripCodeFences(rawResponse));
+  // Recovery attempts, cheapest/most-targeted first: smaller local models
+  // sometimes wrap the JSON in a markdown code fence despite being told
+  // not to, and/or emit a stray literal quote inside a string value
+  // (Hebrew ש"מ-style abbreviations) despite the same instruction. Try
+  // each individually, then both combined, since either can occur alone
+  // or together.
+  const unfenced = stripCodeFences(rawResponse);
+  const recovered = tryParseDraftedQuote(unfenced);
   if (recovered) return recovered;
+
+  const requoted = tryParseDraftedQuote(repairInlineQuotes(rawResponse));
+  if (requoted) return requoted;
+
+  const bothRepaired = tryParseDraftedQuote(repairInlineQuotes(unfenced));
+  if (bothRepaired) return bothRepaired;
 
   throw new QuoteDraftGenerationError(
     new Error(`Model response did not match expected schema: ${rawResponse.slice(0, 500)}`),
