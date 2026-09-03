@@ -43,7 +43,7 @@ export async function GET(request: Request) {
   const endParam = searchParams.get("end");
   const userIdParam = searchParams.get("userId");
   if (!startParam || !endParam) {
-    return NextResponse.json({ error: "start و end مطلوبان." }, { status: 400 });
+    return NextResponse.json({ error: "يجب تحديد تاريخي البداية والنهاية." }, { status: 400 });
   }
 
   const startUtc = new Date(startParam);

@@ -73,12 +73,12 @@ async function main() {
     text = await page.innerText("body");
     check("new customer appears in list", text.includes("زبون تجريبي"));
 
-    // The seed grew from 5 to 8 demo jobs across later phases (Job 6 Mona,
-    // Job 7 Karim, Job 8 Yasmin — see src/server/db/seed.ts) after this
-    // script was first written; check against all 8 so it stays accurate
-    // as the seed evolves, same reconciliation this file's own comments
-    // elsewhere describe for other phase scripts.
-    console.log("5. Jobs list shows all 8 seeded jobs...");
+    // The seed grew from 5 to 9 demo jobs across later phases (Job 6 Mona,
+    // Job 7 Karim, Job 8 Yasmin, Job 9 Samer — see src/server/db/seed.ts)
+    // after this script was first written; check against all 9 so it
+    // stays accurate as the seed evolves, same reconciliation this file's
+    // own comments elsewhere describe for other phase scripts.
+    console.log("5. Jobs list shows all 9 seeded jobs...");
     await page.goto(`${BASE_URL}/jobs`, { waitUntil: "networkidle" });
     text = await page.innerText("body");
     for (const num of [
@@ -90,6 +90,7 @@ async function main() {
       "JOB-2026-0006",
       "JOB-2026-0007",
       "JOB-2026-0008",
+      "JOB-2026-0009",
     ]) {
       check(`${num} listed`, text.includes(num));
     }
@@ -106,9 +107,9 @@ async function main() {
       page.click('button:has-text("إنشاء المهمة")'),
     ]);
     text = await page.innerText("body");
-    // Job numbering continues on from the 8 seeded jobs (see the "5."
-    // check above), so the next created job is JOB-2026-0009.
-    check("new job detail page shows JOB-2026-0009", text.includes("JOB-2026-0009"));
+    // Job numbering continues on from the 9 seeded jobs (see the "5."
+    // check above), so the next created job is JOB-2026-0010.
+    check("new job detail page shows JOB-2026-0010", text.includes("JOB-2026-0010"));
     check("shows new_lead status", text.includes("عميل محتمل جديد"));
 
     console.log("7. Add a measurement, job item, and assignment to the new job...");

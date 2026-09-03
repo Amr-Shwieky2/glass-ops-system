@@ -218,16 +218,19 @@ async function main() {
     // -----------------------------------------------------------------
     // Part D: Dashboard scoping — Basel (VIEW_ASSIGNED_JOBS only), the
     // complementary case: involved in Sara+Mona (measured) and Nabil
-    // (installer assignment), NOT Khaled/Reem/Yasmin — a real two-way
-    // diff against Issam's own view above. Reem's job in particular is
-    // the sharpest test here: Basel IS a today's-appointment assignee on
-    // Reem's installation (so Reem's job number legitimately appears in
-    // Basel's "جدول اليوم" schedule higher up the SAME page) while still
-    // correctly NOT involved in Reem's job for Needs Attention purposes
-    // — attentionRow()'s row-scoping is what makes this a real test
-    // instead of a false pass/fail from that unrelated schedule section.
+    // (installer assignment), NOT Khaled/Yasmin — a real two-way diff
+    // against Issam's own view above. Reem's job is a deliberate
+    // exception, not a "not involved" case: Basel also holds a genuine
+    // jobAssignments row on Reem's job (role تركيب, seeded alongside his
+    // appointmentAssignees row so /jobs and the job detail page's own
+    // involvementFilter — see src/server/jobs/queries.ts — let him open
+    // it from My Day). involvementFilter doesn't distinguish "today's
+    // schedule" from "Needs Attention": that same jobAssignments row
+    // means he is genuinely involved for both, so Reem's job legitimately
+    // appears in his open-repairs/customers-with-balance rows too, same
+    // as Nabil's.
     // -----------------------------------------------------------------
-    console.log("\n--- Part D: dashboard Needs Attention scoping — Basel (involved in Sara+Mona+Nabil, NOT Khaled/Reem/Yasmin) ---");
+    console.log("\n--- Part D: dashboard Needs Attention scoping — Basel (involved in Sara+Mona+Nabil+Reem, NOT Khaled/Yasmin) ---");
     await ctx.clearCookies();
     await login(page, "0504444444", "password123"); // Basel
     text = await dashboardText(page);
@@ -243,14 +246,14 @@ async function main() {
 
     row = await attentionRow(page, LABEL.openRepairs);
     check(
-      "Basel: open-repairs row shows Nabil's job (installer) but NOT Reem's (not involved, despite Reem's job appearing in today's schedule elsewhere on this same page)",
-      row.present && row.text.includes("JOB-2026-0005") && !row.text.includes("JOB-2026-0004"),
+      "Basel: open-repairs row shows BOTH Nabil's and Reem's jobs (installer-assigned on both)",
+      row.present && row.text.includes("JOB-2026-0005") && row.text.includes("JOB-2026-0004"),
     );
 
     row = await attentionRow(page, LABEL.customersBalance);
     check(
-      "Basel: customers-with-balance row shows Mona/Nabil but NOT Reem or Yasmin (same schedule-collision trap as above)",
-      row.present && row.text.includes("منى خليل") && row.text.includes("نبيل عودة") && !row.text.includes("ريم صالح") && !row.text.includes("ياسمين نمر"),
+      "Basel: customers-with-balance row shows Mona/Nabil/Reem but NOT Yasmin (not involved in Yasmin's job)",
+      row.present && row.text.includes("منى خليل") && row.text.includes("نبيل عودة") && row.text.includes("ريم صالح") && !row.text.includes("ياسمين نمر"),
     );
 
     check("Basel: checks-due-soon row ABSENT entirely — lacks MANAGE_CHECKS", !(await attentionRow(page, LABEL.checksDueSoon)).present);
