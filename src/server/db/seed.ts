@@ -222,28 +222,28 @@ async function main() {
 
   console.log("Seeding compensation/penalty/bonus rules...");
   await db.insert(schema.compensationRules).values([
-    { label: "Adhesive", unit: "meter", amount: "100.00", workTypeId: workTypeByKey.adhesive.id },
-    { label: "Glass Railing", unit: "meter", amount: "250.00", workTypeId: workTypeByKey.glass_railing.id },
-    { label: "Fixed Glass", unit: "meter", amount: "130.00", workTypeId: workTypeByKey.fixed_glass.id },
-    { label: "Kitchen Glass", unit: "meter", amount: "250.00", workTypeId: workTypeByKey.kitchen_glass.id },
-    { label: "Shower", unit: "unit", amount: "500.00", workTypeId: workTypeByKey.shower.id },
-    { label: "Ambition Open", unit: "unit", amount: "300.00" },
-    { label: "Ambition Closed", unit: "unit", amount: "500.00" },
-    { label: "Storefront", unit: "job", amount: "1000.00", workTypeId: workTypeByKey.storefront.id },
-    { label: "Mirrors", unit: "meter", amount: "150.00", workTypeId: workTypeByKey.mirror.id },
-    { label: "Jack Replacement", unit: "unit", amount: "300.00" },
-    { label: "Door Installation with Existing Jack", unit: "unit", amount: "500.00", workTypeId: workTypeByKey.door.id },
-    { label: "Workshop Day with Mohammad", unit: "day", amount: "1000.00" },
+    { label: "لصق", unit: "meter", amount: "100.00", workTypeId: workTypeByKey.adhesive.id },
+    { label: "درابزين زجاج", unit: "meter", amount: "250.00", workTypeId: workTypeByKey.glass_railing.id },
+    { label: "زجاج ثابت", unit: "meter", amount: "130.00", workTypeId: workTypeByKey.fixed_glass.id },
+    { label: "زجاج مطبخ", unit: "meter", amount: "250.00", workTypeId: workTypeByKey.kitchen_glass.id },
+    { label: "كابينة استحمام", unit: "unit", amount: "500.00", workTypeId: workTypeByKey.shower.id },
+    { label: "أمبيشن مفتوحة", unit: "unit", amount: "300.00" },
+    { label: "أمبيشن مغلقة", unit: "unit", amount: "500.00" },
+    { label: "واجهة محل", unit: "job", amount: "1000.00", workTypeId: workTypeByKey.storefront.id },
+    { label: "مرايا", unit: "meter", amount: "150.00", workTypeId: workTypeByKey.mirror.id },
+    { label: "استبدال المسكة", unit: "unit", amount: "300.00" },
+    { label: "تركيب باب بمسكة موجودة", unit: "unit", amount: "500.00", workTypeId: workTypeByKey.door.id },
+    { label: "يوم ورشة مع محمد", unit: "day", amount: "1000.00" },
   ]);
   await db.insert(schema.penaltyRules).values([
-    { label: "Late to Customer", defaultAmount: "100.00", description: "Per hour late." },
-    { label: "Did not attend scheduled workshop", defaultAmount: "250.00" },
-    { label: "No official uniform", defaultAmount: "300.00" },
-    { label: "No photo/video documentation", defaultAmount: "100.00" },
-    { label: "Customer complaint about work or behavior", defaultAmount: "600.00" },
+    { label: "التأخر عن موعد العميل", defaultAmount: "100.00", description: "لكل ساعة تأخير." },
+    { label: "عدم حضور الورشة المجدولة", defaultAmount: "250.00" },
+    { label: "عدم ارتداء الزي الرسمي", defaultAmount: "300.00" },
+    { label: "عدم توثيق بالصور أو الفيديو", defaultAmount: "100.00" },
+    { label: "شكوى من العميل بخصوص العمل أو السلوك", defaultAmount: "600.00" },
   ]);
   await db.insert(schema.bonusRules).values([
-    { label: "Customer thank-you video/message", defaultAmount: "50.00" },
+    { label: "فيديو أو رسالة شكر من العميل", defaultAmount: "50.00" },
   ]);
 
   console.log("Seeding application settings...");
@@ -260,7 +260,7 @@ async function main() {
     .insert(schema.vehicles)
     .values([
       { name: "מרצדס / Mercedes", plateNumber: "12-345-67", fuelType: "diesel", defaultResponsibleUserId: issam.id, estimatedValue: "120000.00" },
-      { name: "Transit Van", plateNumber: "98-765-43", fuelType: "diesel", defaultResponsibleUserId: mohammad.id, estimatedValue: "80000.00" },
+      { name: "فان ترانزيت / Transit Van", plateNumber: "98-765-43", fuelType: "diesel", defaultResponsibleUserId: mohammad.id, estimatedValue: "80000.00" },
       { name: "فان التوصيل / Delivery Van", plateNumber: "34-567-89", fuelType: "petrol", defaultResponsibleUserId: basel.id, estimatedValue: "55000.00" },
     ])
     .returning();
@@ -282,7 +282,7 @@ async function main() {
     // Mercedes (responsible: Issam)
     { vehicleId: mercedes.id, addedByUserId: amr.id, amount: "280.00", fuelType: "diesel", liters: "42", mileage: 118500, loggedAt: daysAgo(29) },
     { vehicleId: mercedes.id, addedByUserId: issam.id, amount: "260.00", fuelType: "diesel", liters: "38", mileage: 119200, loggedAt: daysAgo(18) },
-    { vehicleId: mercedes.id, addedByUserId: basel.id, amount: "300.00", fuelType: "diesel", liters: "45.5", loggedAt: daysAgo(6), notes: "Fill-up before Ahmad job installation." },
+    { vehicleId: mercedes.id, addedByUserId: basel.id, amount: "300.00", fuelType: "diesel", liters: "45.5", loggedAt: daysAgo(6), notes: "تعبئة قبل تركيب مهمة أحمد." },
     { vehicleId: mercedes.id, addedByUserId: mohammad.id, amount: "290.00", fuelType: "diesel", liters: "40", mileage: 119800, loggedAt: daysAgo(1) },
     { vehicleId: mercedes.id, addedByUserId: issam.id, amount: "150.00", fuelType: "diesel", liters: "20", loggedAt: daysAgo(0) },
     // Transit Van (responsible: Mohammad)
@@ -331,7 +331,7 @@ async function main() {
       jobNumber: "JOB-2026-0001",
       customerId: ahmad.id,
       statusId: statusByKey.completed.id,
-      title: "Shower + Glass Railing",
+      title: "كابينة استحمام + درابزين زجاج",
       address: ahmad.address,
       measuredByUserId: basel.id,
       pricingResponsibleUserId: mohammad.id,
@@ -347,7 +347,7 @@ async function main() {
     jobId: ahmadJob.id,
     measuredByUserId: basel.id,
     measuredAt: daysAgo(11),
-    details: "Shower opening 90x200cm. Staircase railing: 5 linear meters.",
+    details: "فتحة الكابينة 90×200 سم. درابزين الدرج: 5 أمتار طولية.",
     photosTaken: true,
     pricingResponsibleUserId: mohammad.id,
   });
@@ -379,8 +379,8 @@ async function main() {
     })
     .returning();
   await db.insert(schema.quoteItems).values([
-    { quoteVersionId: ahmadQuoteV1.id, workTypeId: workTypeByKey.shower.id, description: "Shower enclosure, clear tempered glass", quantity: "1", unit: "unit", unitPrice: "7000.00", lineTotal: "7000.00", sortOrder: 0 },
-    { quoteVersionId: ahmadQuoteV1.id, workTypeId: workTypeByKey.glass_railing.id, description: "Staircase glass railing", quantity: "5", unit: "meter", unitPrice: "1000.00", lineTotal: "5000.00", sortOrder: 1 },
+    { quoteVersionId: ahmadQuoteV1.id, workTypeId: workTypeByKey.shower.id, description: "كابينة استحمام، زجاج مقسّى شفاف", quantity: "1", unit: "unit", unitPrice: "7000.00", lineTotal: "7000.00", sortOrder: 0 },
+    { quoteVersionId: ahmadQuoteV1.id, workTypeId: workTypeByKey.glass_railing.id, description: "درابزين زجاج للدرج", quantity: "5", unit: "meter", unitPrice: "1000.00", lineTotal: "5000.00", sortOrder: 1 },
   ]);
   await db.insert(schema.quoteSignatures).values({
     quoteVersionId: ahmadQuoteV1.id,
@@ -404,8 +404,8 @@ async function main() {
   const [ahmadShowerItem, ahmadRailingItem] = await db
     .insert(schema.jobItems)
     .values([
-      { jobId: ahmadJob.id, workTypeId: workTypeByKey.shower.id, description: "Shower enclosure, clear tempered glass", quantity: "1", unit: "unit", salePrice: "7000.00", status: "installed" },
-      { jobId: ahmadJob.id, workTypeId: workTypeByKey.glass_railing.id, description: "Staircase glass railing", quantity: "5", unit: "meter", salePrice: "5000.00", status: "installed" },
+      { jobId: ahmadJob.id, workTypeId: workTypeByKey.shower.id, description: "كابينة استحمام، زجاج مقسّى شفاف", quantity: "1", unit: "unit", salePrice: "7000.00", status: "installed" },
+      { jobId: ahmadJob.id, workTypeId: workTypeByKey.glass_railing.id, description: "درابزين زجاج للدرج", quantity: "5", unit: "meter", salePrice: "5000.00", status: "installed" },
     ])
     .returning();
 
@@ -414,7 +414,7 @@ async function main() {
     .values({
       jobId: ahmadJob.id,
       requestedByUserId: mohammad.id,
-      details: "Shower glass 90x200cm + 5m railing glass panels, standard clear tempered.",
+      details: "زجاج كابينة 90×200 سم + ألواح درابزين 5م، زجاج مقسّى شفاف قياسي.",
       status: "approved",
       estimatedReadyDate: dateOnly(daysAgo(6)),
       createdAt: daysAgo(9),
@@ -423,7 +423,7 @@ async function main() {
   await db.insert(schema.factorySubmissions).values({
     productionRequestId: ahmadProdRequest.id,
     submittedPrice: "3200.00",
-    notes: "Standard tempered glass, 10mm.",
+    notes: "زجاج مقسّى قياسي، 10 مم.",
     estimatedReadyDate: dateOnly(daysAgo(6)),
     submittedAt: daysAgo(8),
     approvalStatus: "approved",
@@ -446,7 +446,7 @@ async function main() {
     scheduledStart: daysAgo(5),
     location: ahmad.address,
     status: "completed",
-    notes: "Bring extra silicone sealant.",
+    notes: "إحضار سيليكون إضافي.",
     createdByUserId: mohammad.id,
   }).returning();
   await db.insert(schema.appointmentAssignees).values([
@@ -455,8 +455,8 @@ async function main() {
     { appointmentId: installAppt[0].id, userId: basel.id },
   ]);
   await db.insert(schema.jobAssignments).values([
-    { jobId: ahmadJob.id, userId: issam.id, role: "installer", createdByUserId: mohammad.id },
-    { jobId: ahmadJob.id, userId: basel.id, role: "installer", createdByUserId: mohammad.id },
+    { jobId: ahmadJob.id, userId: issam.id, role: "تركيب", createdByUserId: mohammad.id },
+    { jobId: ahmadJob.id, userId: basel.id, role: "تركيب", createdByUserId: mohammad.id },
   ]);
 
   // Technician ledger (labor) + matching job cost rows, linked.
@@ -465,7 +465,7 @@ async function main() {
     entryType: "installation_earning",
     amount: "1250.00",
     relatedJobId: ahmadJob.id,
-    description: "Shower + railing installation — Ahmad job",
+    description: "تركيب الكابينة والدرابزين — مهمة أحمد",
     approvalStatus: "approved",
     createdByUserId: mohammad.id,
     approvedByUserId: mohammad.id,
@@ -477,7 +477,7 @@ async function main() {
     entryType: "daily_wage",
     amount: "450.00",
     relatedJobId: ahmadJob.id,
-    description: "Installation day — Ahmad job",
+    description: "يوم تركيب — مهمة أحمد",
     approvalStatus: "approved",
     createdByUserId: mohammad.id,
     approvedByUserId: mohammad.id,
@@ -486,10 +486,10 @@ async function main() {
   }).returning();
 
   await db.insert(schema.jobCosts).values([
-    { jobId: ahmadJob.id, category: "factory_glass", amount: "3200.00", description: "Approved factory production cost.", status: "approved", createdByUserId: mohammad.id, approvedByUserId: mohammad.id, approvedAt: daysAgo(8), incurredAt: dateOnly(daysAgo(8)) },
-    { jobId: ahmadJob.id, category: "hardware", amount: "1000.00", description: "Clamps, hinges, silicone.", status: "approved", createdByUserId: mohammad.id, approvedByUserId: mohammad.id, approvedAt: daysAgo(6), incurredAt: dateOnly(daysAgo(6)) },
-    { jobId: ahmadJob.id, jobItemId: ahmadRailingItem.id, category: "installer_labor", amount: "1250.00", description: "Issam — installation labor.", vendorUserId: issam.id, ledgerEntryId: issamLedger.id, status: "approved", createdByUserId: mohammad.id, approvedByUserId: mohammad.id, approvedAt: daysAgo(5), incurredAt: dateOnly(daysAgo(5)) },
-    { jobId: ahmadJob.id, jobItemId: ahmadShowerItem.id, category: "daily_worker_labor", amount: "450.00", description: "Basel — installation day labor.", vendorUserId: basel.id, ledgerEntryId: baselLedger.id, status: "approved", createdByUserId: mohammad.id, approvedByUserId: mohammad.id, approvedAt: daysAgo(5), incurredAt: dateOnly(daysAgo(5)) },
+    { jobId: ahmadJob.id, category: "factory_glass", amount: "3200.00", description: "تكلفة إنتاج معتمدة من المصنع.", status: "approved", createdByUserId: mohammad.id, approvedByUserId: mohammad.id, approvedAt: daysAgo(8), incurredAt: dateOnly(daysAgo(8)) },
+    { jobId: ahmadJob.id, category: "hardware", amount: "1000.00", description: "مشابك، مفصلات، سيليكون.", status: "approved", createdByUserId: mohammad.id, approvedByUserId: mohammad.id, approvedAt: daysAgo(6), incurredAt: dateOnly(daysAgo(6)) },
+    { jobId: ahmadJob.id, jobItemId: ahmadRailingItem.id, category: "installer_labor", amount: "1250.00", description: "عصام — أجرة تركيب.", vendorUserId: issam.id, ledgerEntryId: issamLedger.id, status: "approved", createdByUserId: mohammad.id, approvedByUserId: mohammad.id, approvedAt: daysAgo(5), incurredAt: dateOnly(daysAgo(5)) },
+    { jobId: ahmadJob.id, jobItemId: ahmadShowerItem.id, category: "daily_worker_labor", amount: "450.00", description: "باسل — أجرة يوم تركيب.", vendorUserId: basel.id, ledgerEntryId: baselLedger.id, status: "approved", createdByUserId: mohammad.id, approvedByUserId: mohammad.id, approvedAt: daysAgo(5), incurredAt: dateOnly(daysAgo(5)) },
   ]);
 
   // Commission: 10% of 6,100 gross profit = 610.
@@ -498,7 +498,7 @@ async function main() {
     entryType: "commission",
     amount: "610.00",
     relatedJobId: ahmadJob.id,
-    description: "Deal-closing commission — Ahmad job",
+    description: "عمولة إغلاق صفقة — مهمة أحمد",
     approvalStatus: "approved",
     createdByUserId: amr.id,
     approvedByUserId: amr.id,
@@ -524,19 +524,19 @@ async function main() {
     customerId: ahmad.id, jobId: ahmadJob.id, amount: "3000.00", paymentDate: dateOnly(daysAgo(9)),
     method: "cash", receivedByUserId: mohammad.id, approvalStatus: "approved",
     createdByUserId: mohammad.id, approvedByUserId: mohammad.id, approvedAt: daysAgo(9), createdAt: daysAgo(9),
-    notes: "Deposit on signing.",
+    notes: "دفعة مقدمة عند التوقيع.",
   }).returning();
   const [midPayment] = await db.insert(schema.customerPayments).values({
     customerId: ahmad.id, jobId: ahmadJob.id, amount: "5000.00", paymentDate: dateOnly(daysAgo(5)),
     method: "cash", receivedByUserId: issam.id, approvalStatus: "approved",
     createdByUserId: issam.id, approvedByUserId: mohammad.id, approvedAt: daysAgo(5), createdAt: daysAgo(5),
-    notes: "Collected on installation day.",
+    notes: "تم تحصيلها يوم التركيب.",
   }).returning();
   await db.insert(schema.customerPayments).values({
     customerId: ahmad.id, jobId: ahmadJob.id, amount: "4000.00", paymentDate: dateOnly(daysAgo(1)),
     method: "bank_transfer", receivedByUserId: mohammad.id, approvalStatus: "approved",
     createdByUserId: mohammad.id, approvedByUserId: mohammad.id, approvedAt: daysAgo(1), createdAt: daysAgo(1),
-    notes: "Final balance on completion.",
+    notes: "الرصيد النهائي عند الإنجاز.",
   });
 
   await db.insert(schema.cashTransactions).values([
@@ -546,7 +546,7 @@ async function main() {
   const [ahmadTransfer] = await db.insert(schema.cashTransfers).values({
     fromCashAccountId: issamCash.id, toCashAccountId: companyCash.id, amount: "5000.00",
     transferredAt: daysAgo(4), createdByUserId: issam.id, confirmedByUserId: amr.id, confirmedAt: daysAgo(4),
-    notes: "Handed over after Ahmad job.",
+    notes: "تم التسليم بعد مهمة أحمد.",
   }).returning();
   await db.insert(schema.cashTransactions).values([
     { cashAccountId: issamCash.id, direction: "out", amount: "5000.00", sourceType: "transfer", sourceId: ahmadTransfer.id, createdByUserId: amr.id, createdAt: daysAgo(4) },
@@ -565,14 +565,14 @@ async function main() {
 
   await db.insert(schema.repairs).values({
     jobId: ahmadJob.id,
-    problemDescription: "Small chip near a railing bracket noticed after installation.",
+    problemDescription: "شرخ صغير بالقرب من مسكة الدرابزين لوحظ بعد التركيب.",
     dateReported: dateOnly(daysAgo(3)),
     responsibleUserId: issam.id,
     scheduledDate: dateOnly(daysAgo(2)),
     status: "resolved",
     resolvedAt: daysAgo(1),
     createdByUserId: mohammad.id,
-    notes: "Bracket replaced free of charge; customer confirmed satisfied.",
+    notes: "تم استبدال المسكة مجاناً؛ أكد العميل رضاه.",
   });
 
   // ---------------------------------------------------------------------
@@ -584,12 +584,12 @@ async function main() {
   }).returning();
   const [saraJob] = await db.insert(schema.jobs).values({
     jobNumber: "JOB-2026-0002", customerId: sara.id, statusId: statusByKey.waiting_for_pricing.id,
-    title: "Kitchen glass splashback", measuredByUserId: basel.id, pricingResponsibleUserId: mohammad.id,
+    title: "زجاج مطبخ", measuredByUserId: basel.id, pricingResponsibleUserId: mohammad.id,
     createdByUserId: basel.id, createdAt: daysAgo(1),
   }).returning();
   await db.insert(schema.measurements).values({
     jobId: saraJob.id, measuredByUserId: basel.id, measuredAt: daysAgo(1),
-    details: "Kitchen glass splashback, 3.2 linear meters, standard height.",
+    details: "زجاج مطبخ، 3.2 متر طولي، ارتفاع قياسي.",
     photosTaken: true, pricingResponsibleUserId: mohammad.id,
   });
   await db.insert(schema.appointments).values({
@@ -607,7 +607,7 @@ async function main() {
   }).returning();
   const [khaledJob] = await db.insert(schema.jobs).values({
     jobNumber: "JOB-2026-0003", customerId: khaled.id, statusId: statusByKey.waiting_for_customer_approval.id,
-    title: "Door + fixed glass", measuredByUserId: issam.id, pricingResponsibleUserId: mohammad.id,
+    title: "باب + زجاج ثابت", measuredByUserId: issam.id, pricingResponsibleUserId: mohammad.id,
     createdByUserId: issam.id, createdAt: daysAgo(3),
   }).returning();
   const [khaledQuote] = await db.insert(schema.quotes).values({
@@ -622,8 +622,8 @@ async function main() {
     isSigned: false, createdByUserId: mohammad.id, createdAt: daysAgo(2),
   }).returning();
   await db.insert(schema.quoteItems).values([
-    { quoteVersionId: khaledQuoteV1.id, workTypeId: workTypeByKey.door.id, description: "Aluminum-framed glass door, existing jack", quantity: "1", unit: "unit", unitPrice: "2200.00", lineTotal: "2200.00", sortOrder: 0 },
-    { quoteVersionId: khaledQuoteV1.id, workTypeId: workTypeByKey.fixed_glass.id, description: "Fixed glass side panel", quantity: "2", unit: "meter", unitPrice: "800.00", lineTotal: "1600.00", sortOrder: 1 },
+    { quoteVersionId: khaledQuoteV1.id, workTypeId: workTypeByKey.door.id, description: "باب زجاج بإطار ألمنيوم، بمسكة موجودة", quantity: "1", unit: "unit", unitPrice: "2200.00", lineTotal: "2200.00", sortOrder: 0 },
+    { quoteVersionId: khaledQuoteV1.id, workTypeId: workTypeByKey.fixed_glass.id, description: "لوح زجاج ثابت جانبي", quantity: "2", unit: "meter", unitPrice: "800.00", lineTotal: "1600.00", sortOrder: 1 },
   ]);
   await db.update(schema.quotes).set({ currentVersionId: khaledQuoteV1.id }).where(sql`${schema.quotes.id} = ${khaledQuote.id}`);
   const khaledToken = generateSecureToken();
@@ -641,7 +641,7 @@ async function main() {
   }).returning();
   const [reemJob] = await db.insert(schema.jobs).values({
     jobNumber: "JOB-2026-0004", customerId: reem.id, statusId: statusByKey.ready_from_factory.id,
-    title: "Storefront glass", measuredByUserId: issam.id, pricingResponsibleUserId: mohammad.id,
+    title: "زجاج واجهة محل", measuredByUserId: issam.id, pricingResponsibleUserId: mohammad.id,
     dealClosedByUserId: mohammad.id, salePriceTotal: "6500.00", createdByUserId: mohammad.id, createdAt: daysAgo(15),
   }).returning();
   const [reemQuote] = await db.insert(schema.quotes).values({
@@ -656,7 +656,7 @@ async function main() {
     isSigned: true, createdByUserId: mohammad.id, createdAt: daysAgo(14),
   }).returning();
   await db.insert(schema.quoteItems).values({
-    quoteVersionId: reemQuoteV1.id, workTypeId: workTypeByKey.storefront.id, description: "Shop storefront glass panels", quantity: "1", unit: "job", unitPrice: "6500.00", lineTotal: "6500.00", sortOrder: 0,
+    quoteVersionId: reemQuoteV1.id, workTypeId: workTypeByKey.storefront.id, description: "ألواح زجاج واجهة المحل", quantity: "1", unit: "job", unitPrice: "6500.00", lineTotal: "6500.00", sortOrder: 0,
   });
   await db.insert(schema.quoteSignatures).values({
     quoteVersionId: reemQuoteV1.id, signedAt: daysAgo(13), customerNameAtSigning: "ريم صالح",
@@ -666,10 +666,10 @@ async function main() {
   await db.update(schema.quotes).set({ currentVersionId: reemQuoteV1.id, signedVersionId: reemQuoteV1.id }).where(sql`${schema.quotes.id} = ${reemQuote.id}`);
   await db.update(schema.jobs).set({ quoteId: reemQuote.id, sourceQuoteVersionId: reemQuoteV1.id }).where(sql`${schema.jobs.id} = ${reemJob.id}`);
   await db.insert(schema.jobItems).values({
-    jobId: reemJob.id, workTypeId: workTypeByKey.storefront.id, description: "Shop storefront glass panels", quantity: "1", unit: "job", salePrice: "6500.00", status: "ready",
+    jobId: reemJob.id, workTypeId: workTypeByKey.storefront.id, description: "ألواح زجاج واجهة المحل", quantity: "1", unit: "job", salePrice: "6500.00", status: "ready",
   });
   const [reemProdRequest] = await db.insert(schema.productionRequests).values({
-    jobId: reemJob.id, requestedByUserId: mohammad.id, details: "Storefront tempered glass panels, 3 sections.",
+    jobId: reemJob.id, requestedByUserId: mohammad.id, details: "ألواح زجاج مقسّى لواجهة المحل، 3 أقسام.",
     status: "approved", estimatedReadyDate: dateOnly(daysAgo(1)), createdAt: daysAgo(12),
   }).returning();
   await db.insert(schema.factorySubmissions).values({
@@ -713,7 +713,7 @@ async function main() {
   }).returning();
   const [nabilJob] = await db.insert(schema.jobs).values({
     jobNumber: "JOB-2026-0005", customerId: nabil.id, statusId: statusByKey.repair_needed.id,
-    title: "Mirror + aluminum door", measuredByUserId: issam.id, pricingResponsibleUserId: mohammad.id,
+    title: "مرآة + باب ألمنيوم", measuredByUserId: issam.id, pricingResponsibleUserId: mohammad.id,
     dealClosedByUserId: issam.id, salePriceTotal: "9000.00", createdByUserId: issam.id, createdAt: daysAgo(20),
   }).returning();
   const [nabilQuote] = await db.insert(schema.quotes).values({
@@ -728,8 +728,8 @@ async function main() {
     isSigned: true, createdByUserId: mohammad.id, createdAt: daysAgo(19),
   }).returning();
   await db.insert(schema.quoteItems).values([
-    { quoteVersionId: nabilQuoteV1.id, workTypeId: workTypeByKey.mirror.id, description: "Hallway mirror", quantity: "6", unit: "meter", unitPrice: "400.00", lineTotal: "2400.00", sortOrder: 0 },
-    { quoteVersionId: nabilQuoteV1.id, workTypeId: workTypeByKey.aluminum.id, description: "Aluminum entrance door", quantity: "1", unit: "unit", unitPrice: "6600.00", lineTotal: "6600.00", sortOrder: 1 },
+    { quoteVersionId: nabilQuoteV1.id, workTypeId: workTypeByKey.mirror.id, description: "مرآة الممر", quantity: "6", unit: "meter", unitPrice: "400.00", lineTotal: "2400.00", sortOrder: 0 },
+    { quoteVersionId: nabilQuoteV1.id, workTypeId: workTypeByKey.aluminum.id, description: "باب مدخل ألمنيوم", quantity: "1", unit: "unit", unitPrice: "6600.00", lineTotal: "6600.00", sortOrder: 1 },
   ]);
   await db.insert(schema.quoteSignatures).values({
     quoteVersionId: nabilQuoteV1.id, signedAt: daysAgo(18), customerNameAtSigning: "نبيل عودة",
@@ -739,10 +739,10 @@ async function main() {
   await db.update(schema.quotes).set({ currentVersionId: nabilQuoteV1.id, signedVersionId: nabilQuoteV1.id }).where(sql`${schema.quotes.id} = ${nabilQuote.id}`);
   await db.update(schema.jobs).set({ quoteId: nabilQuote.id, sourceQuoteVersionId: nabilQuoteV1.id }).where(sql`${schema.jobs.id} = ${nabilJob.id}`);
   await db.insert(schema.jobItems).values([
-    { jobId: nabilJob.id, workTypeId: workTypeByKey.mirror.id, description: "Hallway mirror", quantity: "6", unit: "meter", salePrice: "2400.00", status: "installed" },
-    { jobId: nabilJob.id, workTypeId: workTypeByKey.aluminum.id, description: "Aluminum entrance door", quantity: "1", unit: "unit", salePrice: "6600.00", status: "installed" },
+    { jobId: nabilJob.id, workTypeId: workTypeByKey.mirror.id, description: "مرآة الممر", quantity: "6", unit: "meter", salePrice: "2400.00", status: "installed" },
+    { jobId: nabilJob.id, workTypeId: workTypeByKey.aluminum.id, description: "باب مدخل ألمنيوم", quantity: "1", unit: "unit", salePrice: "6600.00", status: "installed" },
   ]);
-  await db.insert(schema.jobAssignments).values({ jobId: nabilJob.id, userId: basel.id, role: "installer", createdByUserId: issam.id });
+  await db.insert(schema.jobAssignments).values({ jobId: nabilJob.id, userId: basel.id, role: "تركيب", createdByUserId: issam.id });
   const [nabilPayment] = await db.insert(schema.customerPayments).values({
     customerId: nabil.id, jobId: nabilJob.id, amount: "5000.00", paymentDate: dateOnly(daysAgo(6)),
     method: "cash", receivedByUserId: basel.id, approvalStatus: "approved",
@@ -753,7 +753,7 @@ async function main() {
   });
   await db.insert(schema.repairs).values({
     jobId: nabilJob.id,
-    problemDescription: "Door does not close smoothly, hinge needs adjustment.",
+    problemDescription: "الباب لا يُغلق بسلاسة، المفصلة تحتاج ضبطاً.",
     dateReported: dateOnly(daysAgo(2)),
     responsibleUserId: basel.id,
     scheduledDate: dateOnly(daysFromNow(1)),
@@ -763,7 +763,7 @@ async function main() {
   await db.insert(schema.incomingChecks).values({
     customerId: nabil.id, jobId: nabilJob.id, amount: "2000.00", checkNumber: "00458219",
     bank: "בנק לאומי / Bank Leumi", dueDate: dateOnly(daysFromNow(2)), receivedByUserId: mohammad.id,
-    status: "future", notes: "Second installment, post-dated at signing.",
+    status: "future", notes: "القسط الثاني، شيك مؤجل عند التوقيع.",
   });
 
   // ---------------------------------------------------------------------
@@ -779,7 +779,7 @@ async function main() {
   }).returning();
   const [monaJob] = await db.insert(schema.jobs).values({
     jobNumber: "JOB-2026-0006", customerId: mona.id, statusId: statusByKey.ready_from_factory.id,
-    title: "Bathroom mirror", measuredByUserId: basel.id, pricingResponsibleUserId: mohammad.id,
+    title: "مرآة حمام", measuredByUserId: basel.id, pricingResponsibleUserId: mohammad.id,
     dealClosedByUserId: mohammad.id, salePriceTotal: "1800.00", createdByUserId: mohammad.id, createdAt: daysAgo(10),
   }).returning();
   const [monaQuote] = await db.insert(schema.quotes).values({
@@ -794,7 +794,7 @@ async function main() {
     isSigned: true, createdByUserId: mohammad.id, createdAt: daysAgo(9),
   }).returning();
   await db.insert(schema.quoteItems).values({
-    quoteVersionId: monaQuoteV1.id, workTypeId: workTypeByKey.mirror.id, description: "Bathroom mirror, bevelled edge", quantity: "3", unit: "meter", unitPrice: "600.00", lineTotal: "1800.00", sortOrder: 0,
+    quoteVersionId: monaQuoteV1.id, workTypeId: workTypeByKey.mirror.id, description: "مرآة حمام، حافة مشطوفة", quantity: "3", unit: "meter", unitPrice: "600.00", lineTotal: "1800.00", sortOrder: 0,
   });
   await db.insert(schema.quoteSignatures).values({
     quoteVersionId: monaQuoteV1.id, signedAt: daysAgo(8), customerNameAtSigning: "منى خليل",
@@ -804,10 +804,10 @@ async function main() {
   await db.update(schema.quotes).set({ currentVersionId: monaQuoteV1.id, signedVersionId: monaQuoteV1.id }).where(sql`${schema.quotes.id} = ${monaQuote.id}`);
   await db.update(schema.jobs).set({ quoteId: monaQuote.id, sourceQuoteVersionId: monaQuoteV1.id }).where(sql`${schema.jobs.id} = ${monaJob.id}`);
   await db.insert(schema.jobItems).values({
-    jobId: monaJob.id, workTypeId: workTypeByKey.mirror.id, description: "Bathroom mirror, bevelled edge", quantity: "3", unit: "meter", salePrice: "1800.00", status: "ready",
+    jobId: monaJob.id, workTypeId: workTypeByKey.mirror.id, description: "مرآة حمام، حافة مشطوفة", quantity: "3", unit: "meter", salePrice: "1800.00", status: "ready",
   });
   const [monaProdRequest] = await db.insert(schema.productionRequests).values({
-    jobId: monaJob.id, requestedByUserId: mohammad.id, details: "Bathroom mirror, bevelled edge, 3 linear meters.",
+    jobId: monaJob.id, requestedByUserId: mohammad.id, details: "مرآة حمام، حافة مشطوفة، 3 أمتار طولية.",
     status: "approved", estimatedReadyDate: dateOnly(daysAgo(1)), createdAt: daysAgo(7),
   }).returning();
   await db.insert(schema.factorySubmissions).values({
@@ -848,7 +848,7 @@ async function main() {
     jobId: reemJob.id, type: "installation", scheduledStart: todayAt(9, 0),
     location: reem.address, status: "arrived", arrivedAt: todayAt(9, 8),
     createdByUserId: mohammad.id,
-    notes: "Installation scheduled: Tuesday 09:00.",
+    notes: "موعد التركيب: يوم الثلاثاء الساعة 09:00.",
   }).returning();
   await db.insert(schema.appointmentAssignees).values([
     { appointmentId: reemInstallAppt.id, userId: issam.id },
@@ -862,8 +862,8 @@ async function main() {
   // appointment arrived and add field notes via My Day but could never
   // view the job itself.
   await db.insert(schema.jobAssignments).values([
-    { jobId: reemJob.id, userId: issam.id, role: "installer", createdByUserId: mohammad.id },
-    { jobId: reemJob.id, userId: basel.id, role: "installer", createdByUserId: mohammad.id },
+    { jobId: reemJob.id, userId: issam.id, role: "تركيب", createdByUserId: mohammad.id },
+    { jobId: reemJob.id, userId: basel.id, role: "تركيب", createdByUserId: mohammad.id },
   ]);
   await db
     .update(schema.jobs)
@@ -877,7 +877,7 @@ async function main() {
   const [nabilRepairAppt] = await db.insert(schema.appointments).values({
     jobId: nabilJob.id, type: "repair", scheduledStart: tomorrowAt(11, 0),
     location: nabil.address, status: "scheduled", createdByUserId: issam.id,
-    notes: "Door hinge adjustment.",
+    notes: "ضبط مفصلة الباب.",
   }).returning();
   await db.insert(schema.appointmentAssignees).values({
     appointmentId: nabilRepairAppt.id, userId: issam.id,
@@ -885,11 +885,11 @@ async function main() {
 
   console.log("Seeding external contractor + outgoing check (for screen coverage)...");
   await db.insert(schema.externalContractors).values({
-    name: "أبو علي للألمنيوم / Abu Ali Aluminum", phone: "+972506661234", serviceType: "Aluminum installation",
+    name: "أبو علي للألمنيوم / Abu Ali Aluminum", phone: "+972506661234", serviceType: "تركيب ألمنيوم",
   });
   await db.insert(schema.outgoingChecks).values({
-    payeeName: "Glass Supply Co.", amount: "4500.00", checkNumber: "77123", dueDate: dateOnly(daysFromNow(10)),
-    reason: "Raw glass stock replenishment", status: "pending", createdByUserId: amr.id,
+    payeeName: "شركة توريد الزجاج / Glass Supply Co.", amount: "4500.00", checkNumber: "77123", dueDate: dateOnly(daysFromNow(10)),
+    reason: "تجديد مخزون الزجاج الخام", status: "pending", createdByUserId: amr.id,
   });
 
   console.log("Seeding a pending approval request (worker-reported payment)...");
@@ -965,13 +965,13 @@ async function main() {
   }).returning();
   const [karimJob] = await db.insert(schema.jobs).values({
     jobNumber: "JOB-2026-0007", customerId: karim.id, statusId: statusByKey.installed.id,
-    title: "Balcony glass railing", measuredByUserId: basel.id, pricingResponsibleUserId: mohammad.id,
+    title: "درابزين زجاج شرفة", measuredByUserId: basel.id, pricingResponsibleUserId: mohammad.id,
     dealClosedByUserId: mohammad.id, salePriceTotal: "3000.00", createdByUserId: mohammad.id, createdAt: daysAgo(12),
   }).returning();
   await db.insert(schema.jobItems).values({
-    jobId: karimJob.id, workTypeId: workTypeByKey.glass_railing.id, description: "Balcony glass railing", quantity: "12", unit: "meter", salePrice: "3000.00", status: "installed",
+    jobId: karimJob.id, workTypeId: workTypeByKey.glass_railing.id, description: "درابزين زجاج شرفة", quantity: "12", unit: "meter", salePrice: "3000.00", status: "installed",
   });
-  await db.insert(schema.jobAssignments).values({ jobId: karimJob.id, userId: basel.id, role: "installer", createdByUserId: mohammad.id });
+  await db.insert(schema.jobAssignments).values({ jobId: karimJob.id, userId: basel.id, role: "تركيب", createdByUserId: mohammad.id });
   const [karimPayment] = await db.insert(schema.customerPayments).values({
     customerId: karim.id, jobId: karimJob.id, amount: "3000.00", paymentDate: dateOnly(daysAgo(2)),
     method: "bank_transfer", receivedByUserId: mohammad.id, approvalStatus: "approved",
@@ -1051,17 +1051,17 @@ async function main() {
   }).returning();
   const [yasminJob] = await db.insert(schema.jobs).values({
     jobNumber: "JOB-2026-0008", customerId: yasmin.id, statusId: statusByKey.in_production.id,
-    title: "Kitchen glass + fixed panel", measuredByUserId: issam.id, pricingResponsibleUserId: mohammad.id,
+    title: "زجاج مطبخ + لوح ثابت", measuredByUserId: issam.id, pricingResponsibleUserId: mohammad.id,
     dealClosedByUserId: mohammad.id, salePriceTotal: "4200.00", createdByUserId: mohammad.id, createdAt: daysAgo(4),
   }).returning();
   const [yasminProdRequest] = await db.insert(schema.productionRequests).values({
     jobId: yasminJob.id, requestedByUserId: mohammad.id,
-    details: "Kitchen glass splashback + fixed side panel, standard clear tempered.",
+    details: "زجاج مطبخ + لوح جانبي ثابت، زجاج مقسّى شفاف قياسي.",
     status: "submitted", estimatedReadyDate: dateOnly(daysFromNow(3)), createdAt: daysAgo(2),
   }).returning();
   const [yasminSubmission] = await db.insert(schema.factorySubmissions).values({
     productionRequestId: yasminProdRequest.id, submittedPrice: "1500.00",
-    notes: "Standard tempered glass, 8mm.", submittedAt: daysAgo(0),
+    notes: "زجاج مقسّى قياسي، 8 مم.", submittedAt: daysAgo(0),
   }).returning();
   await db.insert(schema.approvalRequests).values({
     entityType: "factory_submission", entityId: yasminSubmission.id, requestedByUserId: mohammad.id,
