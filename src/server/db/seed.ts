@@ -522,6 +522,16 @@ async function main() {
     { cashAccountId: companyCash.id, direction: "in", amount: "5000.00", sourceType: "transfer", sourceId: ahmadTransfer.id, createdByUserId: amr.id, createdAt: daysAgo(4) },
   ]);
 
+  // A handful more cash-drawer transactions on Mohammad's account, spread
+  // across different dates, so the finance page's date-filtered cash-audit
+  // view has something real to filter (not just the single row above).
+  await db.insert(schema.cashTransactions).values([
+    { cashAccountId: mohammadCash.id, direction: "in", amount: "1200.00", sourceType: "customer_payment", sourceId: midPayment.id, createdByUserId: mohammad.id, createdAt: daysAgo(20) },
+    { cashAccountId: mohammadCash.id, direction: "out", amount: "500.00", sourceType: "adjustment", createdByUserId: amr.id, createdAt: daysAgo(14), notes: "تسوية: فرق في العد الشهري." },
+    { cashAccountId: mohammadCash.id, direction: "in", amount: "800.00", sourceType: "customer_payment", sourceId: depositPayment.id, createdByUserId: mohammad.id, createdAt: daysAgo(6) },
+    { cashAccountId: mohammadCash.id, direction: "out", amount: "300.00", sourceType: "adjustment", createdByUserId: amr.id, createdAt: daysAgo(0), notes: "تسوية: مصاريف نثرية." },
+  ]);
+
   await db.insert(schema.repairs).values({
     jobId: ahmadJob.id,
     problemDescription: "Small chip near a railing bracket noticed after installation.",
@@ -799,9 +809,14 @@ async function main() {
   // seed.ts sets every status directly rather than going through the
   // Server Action layer — the job's status is moved forward by hand here,
   // exactly like scheduleAppointmentAction would have done.
+  // Already marked arrived (a few minutes after the scheduled start) so My
+  // Day shows both appointment states side by side: Basel sees the "mark
+  // arrived" button on saraFollowUpAppt above and the already-arrived state
+  // here, without any manual setup.
   const [reemInstallAppt] = await db.insert(schema.appointments).values({
     jobId: reemJob.id, type: "installation", scheduledStart: todayAt(9, 0),
-    location: reem.address, status: "scheduled", createdByUserId: mohammad.id,
+    location: reem.address, status: "arrived", arrivedAt: todayAt(9, 8),
+    createdByUserId: mohammad.id,
     notes: "Installation scheduled: Tuesday 09:00.",
   }).returning();
   await db.insert(schema.appointmentAssignees).values([
