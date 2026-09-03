@@ -5,7 +5,9 @@ import {
   timestamp,
   numeric,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { users } from "./auth";
 
 /**
@@ -38,5 +40,19 @@ export const customers = pgTable(
   (t) => [
     index("customers_name_idx").on(t.name),
     index("customers_phone_idx").on(t.phone),
+    // Enforces "at most one active customer per phone number" at the
+    // database level (partial — excludes soft-deleted rows, so a phone
+    // freed up by a soft delete can be reused by a genuinely new
+    // customer). Without this, two concurrent find-or-create-by-phone
+    // submissions (e.g. two technicians independently visiting the same
+    // customer via the New Measurement quick-submit flow, see
+    // src/server/measurements/actions.ts) can both pass the "does this
+    // phone already have a customer?" check before either commits its
+    // insert, producing two customer rows for one phone number. With
+    // this index, the loser's INSERT no-ops (onConflictDoNothing) instead
+    // of creating a duplicate.
+    uniqueIndex("customers_phone_active_unique_idx")
+      .on(t.phone)
+      .where(sql`${t.deletedAt} IS NULL`),
   ],
 );

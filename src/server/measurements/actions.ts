@@ -197,6 +197,17 @@ export async function submitFieldMeasurementAction(
 
       let customerId = existingCustomerRows[0]?.id;
       if (!customerId) {
+        // Atomic find-or-create: two near-simultaneous submissions for the
+        // same phone (e.g. two technicians independently visiting the same
+        // customer) can both reach this branch before either commits. The
+        // partial unique index on customers.phone (schema/customers.ts,
+        // WHERE deleted_at IS NULL) plus onConflictDoNothing makes the
+        // loser's insert a no-op instead of creating a duplicate customer
+        // row — Postgres blocks the loser on the winner's row lock until
+        // the winner's transaction resolves, then re-checks the conflict,
+        // so the immediate re-select below is guaranteed to see the
+        // winner's committed row (or, if the winner rolled back, to find
+        // nothing and fail loudly rather than silently duplicate).
         const [newCustomer] = await tx
           .insert(customers)
           .values({
@@ -204,18 +215,35 @@ export async function submitFieldMeasurementAction(
             phone,
             createdByUserId: user!.id,
           })
+          .onConflictDoNothing({
+            target: customers.phone,
+            where: isNull(customers.deletedAt),
+          })
           .returning();
-        customerId = newCustomer.id;
-        await recordAudit(
-          {
-            userId: user!.id,
-            action: "customer.create",
-            entityType: "customer",
-            entityId: newCustomer.id,
-            newValue: { name: newCustomer.name, phone: newCustomer.phone, source: "field_measurement" },
-          },
-          tx,
-        );
+
+        if (newCustomer) {
+          customerId = newCustomer.id;
+          await recordAudit(
+            {
+              userId: user!.id,
+              action: "customer.create",
+              entityType: "customer",
+              entityId: newCustomer.id,
+              newValue: { name: newCustomer.name, phone: newCustomer.phone, source: "field_measurement" },
+            },
+            tx,
+          );
+        } else {
+          const [raced] = await tx
+            .select({ id: customers.id })
+            .from(customers)
+            .where(and(eq(customers.phone, phone), isNull(customers.deletedAt)))
+            .limit(1);
+          if (!raced) {
+            throw new Error("تعذر تحديد عميل بهذا الرقم، حاول مرة أخرى.");
+          }
+          customerId = raced.id;
+        }
       }
 
       const [pendingStatus] = await tx

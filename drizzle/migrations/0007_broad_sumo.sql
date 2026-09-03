@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "customers_phone_active_unique_idx" ON "customers" USING btree ("phone") WHERE "customers"."deleted_at" IS NULL;

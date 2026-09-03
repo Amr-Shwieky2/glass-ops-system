@@ -28,6 +28,24 @@ const initialState: ActionState = {};
 const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024;
 const MAX_FILES = 5;
 
+// Mirrors ALLOWED_IMAGE_MIME_TYPES in src/server/storage/attachments.ts —
+// raster types only, deliberately narrower than a blanket `image/*`.
+// `image/svg+xml` is a script-capable document format, not a pixel
+// format, and must never be added here or accepted client-side even
+// though the server re-validates authoritatively: the server-side reject
+// message is generic, so allowing it through here first would just cost
+// the user an extra round trip to learn "not supported" for a type we
+// already know we'll refuse.
+const ALLOWED_IMAGE_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+  "image/bmp",
+]);
+
 /** SessionStorage key the job detail page's success-toast component looks
  * for after the server action's redirect lands (see field-measurement-
  * success-toast.tsx for why a plain useActionState `success` flag can't
@@ -35,7 +53,7 @@ const MAX_FILES = 5;
 const SUBMITTED_FLAG_KEY = "fieldMeasurementSubmittedAt";
 
 function isAllowedFile(file: File): boolean {
-  return file.type === "application/pdf" || file.type.startsWith("image/");
+  return file.type === "application/pdf" || ALLOWED_IMAGE_MIME_TYPES.has(file.type);
 }
 
 function formatFileSize(bytes: number): string {

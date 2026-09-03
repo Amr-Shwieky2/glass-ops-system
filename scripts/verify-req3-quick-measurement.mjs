@@ -211,6 +211,8 @@ async function main() {
   const testPhoneNormalized = normalizePhone(testPhoneRaw);
   const bypassPhoneRaw = "0507002099";
   const bypassPhoneNormalized = normalizePhone(bypassPhoneRaw);
+  const svgPhoneRaw = "0507002098";
+  const svgPhoneNormalized = normalizePhone(svgPhoneRaw);
 
   let jobId1, jobId2;
   let attachment1;
@@ -490,6 +492,74 @@ async function main() {
     );
     const bypassCustomers = await customersByPhone(bypassPhoneNormalized);
     check("no customer was created for the rejected bypass submission (DB)", bypassCustomers.length === 0);
+
+    // ===================================================================
+    // Part H: image/svg+xml is rejected server-side even though it starts
+    // with "image/" — a browser-declared Content-Type the naive
+    // `type.startsWith("image/")` check would have accepted. SVG is a
+    // script-capable document format; the attachment route serves files
+    // back `inline` with the stored MIME type, so accepting it here would
+    // be a stored-XSS hole for whoever later opens the attachment link.
+    // Same network-tamper technique as Part G: a legit PNG passes the
+    // client-side check so the real submission fires, then the route
+    // handler swaps the multipart part in flight to simulate an attacker
+    // who bypassed the browser's <input accept> and the React check
+    // entirely.
+    // ===================================================================
+    console.log("\n=== Part H: image/svg+xml is rejected server-side (not just non-image/PDF types) ===");
+    let svgTampered = false;
+    await page.route(isNewMeasurementRequest, async (route) => {
+      const req = route.request();
+      if (req.method() !== "POST") {
+        await route.continue();
+        return;
+      }
+      const headers = await req.allHeaders();
+      const contentType = headers["content-type"] ?? "";
+      const body = req.postDataBuffer();
+      if (!body || !contentType.includes("multipart/form-data")) {
+        await route.continue();
+        return;
+      }
+      const newBody = replaceMultipartFilePart(
+        body,
+        contentType,
+        "files",
+        "payload.svg",
+        "image/svg+xml",
+        Buffer.from("<svg xmlns='http://www.w3.org/2000/svg'><script>alert(document.cookie)</script></svg>"),
+      );
+      if (!newBody) {
+        await route.continue();
+        return;
+      }
+      svgTampered = true;
+      await route.continue({ postData: newBody });
+    });
+
+    await page.fill("#phone", svgPhoneRaw);
+    await page.setInputFiles("#files", [
+      { name: "legit.png", mimeType: "image/png", buffer: TINY_PNG_BUFFER },
+    ]);
+    await page.click('button:has-text("إرسال القياس")');
+
+    const svgRejected = await page
+      .waitForSelector("text=غير مدعوم", { timeout: 10000 })
+      .then(() => true)
+      .catch(() => false);
+    await page.unroute(isNewMeasurementRequest);
+
+    check("the network-level tamper actually swapped in an image/svg+xml part", svgTampered);
+    check(
+      "server-side validateAttachmentFiles rejects image/svg+xml even though it starts with \"image/\"",
+      svgRejected,
+    );
+    check(
+      "the browser did NOT navigate away to a new job — the rejected SVG submission created nothing",
+      !/\/jobs\/[0-9a-fA-F-]{36}$/.test(new URL(page.url()).pathname),
+    );
+    const svgCustomers = await customersByPhone(svgPhoneNormalized);
+    check("no customer was created for the rejected SVG submission (DB)", svgCustomers.length === 0);
 
     if (consoleErrors.length > 0) {
       console.log("\n--- Browser console errors seen during run ---");

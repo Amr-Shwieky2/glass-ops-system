@@ -78,11 +78,19 @@ export async function GET(
   // inline (not attachment) so images/PDFs preview in-browser rather than
   // force-downloading — the encoded filename* form is RFC 5987, so an
   // original Arabic filename round-trips correctly too.
+  //
+  // X-Content-Type-Options: nosniff is defense in depth alongside the
+  // upload-time allowlist in src/server/storage/attachments.ts
+  // (isAllowedAttachmentMimeType, raster images + PDF only, no
+  // image/svg+xml) — it stops a browser from ever reinterpreting a served
+  // attachment as HTML/script based on sniffed content rather than the
+  // declared Content-Type, no matter what mimeType ended up stored.
   return new NextResponse(new Uint8Array(bytes), {
     headers: {
       "Content-Type": attachment.mimeType,
       "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(attachment.fileName)}`,
       "Content-Length": String(bytes.length),
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }
