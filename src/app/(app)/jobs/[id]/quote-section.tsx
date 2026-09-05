@@ -1,17 +1,15 @@
 import { FileText, CheckCircle2 } from "lucide-react";
-import type { VariantProps } from "class-variance-authority";
 import { formatILS } from "@/server/money";
 import { unitLabelAr } from "@/lib/units";
+import { QUOTE_STATUS_LABEL, quoteStatusVariant } from "@/lib/quote-status-style";
 import type { QuoteForJob } from "@/server/quotes/queries";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Badge, type badgeVariants } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { QuoteBuilderDialog, type QuoteBuilderItem } from "./quote-builder-dialog";
 import { AiQuoteDraftTrigger } from "./ai-quote-draft-trigger";
 import { SendQuoteButton } from "./send-quote-button";
 import { ConvertToJobButton } from "./convert-to-job-button";
-
-type BadgeVariant = NonNullable<VariantProps<typeof badgeVariants>["variant"]>;
 
 const dateFmt = new Intl.DateTimeFormat("ar", {
   year: "numeric",
@@ -19,22 +17,6 @@ const dateFmt = new Intl.DateTimeFormat("ar", {
   day: "numeric",
   numberingSystem: "latn",
 });
-
-const QUOTE_STATUS_LABEL: Record<string, string> = {
-  draft: "مسودة",
-  sent: "بانتظار توقيع العميل",
-  signed: "موقّع",
-  expired: "منتهي الصلاحية",
-  superseded: "مستبدل",
-};
-
-const QUOTE_STATUS_VARIANT: Record<string, BadgeVariant> = {
-  draft: "outline",
-  sent: "warning",
-  signed: "success",
-  expired: "destructive",
-  superseded: "outline",
-};
 
 interface JobItemForPrefill {
   description: string | null;
@@ -96,7 +78,7 @@ export function QuoteSection({
           <FileText className="size-5 text-muted-foreground" />
           عرض السعر
           {quote && (
-            <Badge variant={QUOTE_STATUS_VARIANT[quote.status] ?? "default"}>
+            <Badge variant={quoteStatusVariant(quote.status)}>
               {QUOTE_STATUS_LABEL[quote.status] ?? quote.status}
             </Badge>
           )}

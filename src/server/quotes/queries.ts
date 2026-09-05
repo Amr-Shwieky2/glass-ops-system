@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, count, desc, eq, ilike, isNull, or } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import {
   quotes,
@@ -204,4 +204,92 @@ export async function getQuoteRenderData(quoteId: string) {
   ]);
 
   return { quote, version: { ...version, items }, customer, job, signature };
+}
+
+export type QuoteStatus = "draft" | "sent" | "signed" | "expired" | "superseded";
+const QUOTE_STATUSES: readonly QuoteStatus[] = [
+  "draft",
+  "sent",
+  "signed",
+  "expired",
+  "superseded",
+];
+export function isQuoteStatus(value: string): value is QuoteStatus {
+  return (QUOTE_STATUSES as readonly string[]).includes(value);
+}
+
+export interface ListQuotesParams {
+  search?: string;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface QuoteListRow {
+  id: string;
+  quoteNumber: string;
+  jobId: string;
+  jobNumber: string;
+  customerName: string;
+  status: string;
+  total: string | null;
+  createdAt: Date;
+}
+
+/** Cross-job quote list for the /quotes list page (nav already gates it on
+ * CREATE_QUOTE, SEND_QUOTE, CLOSE_DEAL, or VIEW_ALL_JOBS) — no per-row
+ * job-involvement restriction, same posture as listProductionRequests:
+ * holding any one of those permissions means seeing every quote, not just
+ * "your own" jobs. */
+export async function listQuotes(
+  params: ListQuotesParams,
+): Promise<{ rows: QuoteListRow[]; total: number }> {
+  const { search, status, limit = 25, offset = 0 } = params;
+
+  const conditions = [];
+  const term = search?.trim();
+  if (term) {
+    const pattern = `%${term}%`;
+    conditions.push(
+      or(
+        ilike(quotes.quoteNumber, pattern),
+        ilike(jobs.jobNumber, pattern),
+        ilike(customers.name, pattern),
+      )!,
+    );
+  }
+  if (status && isQuoteStatus(status)) {
+    conditions.push(eq(quotes.status, status));
+  }
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [rows, [{ value: total }]] = await Promise.all([
+    db
+      .select({
+        id: quotes.id,
+        quoteNumber: quotes.quoteNumber,
+        jobId: quotes.jobId,
+        jobNumber: jobs.jobNumber,
+        customerName: customers.name,
+        status: quotes.status,
+        total: quoteVersions.total,
+        createdAt: quotes.createdAt,
+      })
+      .from(quotes)
+      .innerJoin(jobs, eq(quotes.jobId, jobs.id))
+      .innerJoin(customers, eq(quotes.customerId, customers.id))
+      .leftJoin(quoteVersions, eq(quotes.currentVersionId, quoteVersions.id))
+      .where(where)
+      .orderBy(desc(quotes.createdAt))
+      .limit(limit)
+      .offset(offset),
+    db
+      .select({ value: count() })
+      .from(quotes)
+      .innerJoin(jobs, eq(quotes.jobId, jobs.id))
+      .innerJoin(customers, eq(quotes.customerId, customers.id))
+      .where(where),
+  ]);
+
+  return { rows, total };
 }
