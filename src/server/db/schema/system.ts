@@ -6,6 +6,7 @@ import {
   boolean,
   jsonb,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { approvableEntityTypeEnum, approvalStatusEnum } from "./enums";
 import { users } from "./auth";
@@ -107,5 +108,40 @@ export const auditLogs = pgTable(
   (t) => [
     index("audit_logs_entity_idx").on(t.entityType, t.entityId),
     index("audit_logs_created_at_idx").on(t.createdAt),
+  ],
+);
+
+/**
+ * Idempotency/duplicate-prevention ledger for the scheduled-notification
+ * worker (Sprint 4, src/server/scheduler/). A scheduled condition (e.g.
+ * "installation appointment starts within the reminder window") is
+ * re-evaluated on every scheduler tick, so without this table the same
+ * appointment/quote/check/repair/job would get re-notified every tick
+ * forever. Before sending any scheduled reminder, the worker atomically
+ * claims the (triggerType, relatedEntityId) pair here via
+ * `.onConflictDoNothing()` — only the tick whose INSERT actually returns a
+ * row (i.e. no prior row existed) proceeds to notify; every other
+ * concurrent or later tick sees the conflict and skips, race-safely
+ * (a SELECT-then-INSERT check would have a TOCTOU race between two
+ * overlapping ticks; the unique constraint below is what actually makes
+ * this safe). One row = one trigger firing exactly once, ever, for that
+ * entity — matching "duplicate prevention" rather than "at most once per
+ * day" or similar, since every trigger type here targets a specific,
+ * non-repeating real-world moment (this appointment's start time, this
+ * quote being sent, ...), not a recurring condition.
+ */
+export const scheduledReminders = pgTable(
+  "scheduled_reminders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    triggerType: text("trigger_type").notNull(),
+    relatedEntityId: uuid("related_entity_id").notNull(),
+    firedAt: timestamp("fired_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("scheduled_reminders_trigger_entity_idx").on(
+      t.triggerType,
+      t.relatedEntityId,
+    ),
   ],
 );

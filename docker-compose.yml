@@ -15,11 +15,18 @@
 # volume, and its own credentials; nothing here reads or writes that
 # database.
 #
-# NOTE: no worker/scheduled-sweep service is defined here yet. ARCHITECTURE.md
-# section 9 mentions "a small worker container for scheduled notification
-# sweeps", but no scheduled-job entrypoint exists in the codebase as of this
-# phase — adding a service that runs nothing real would misrepresent what
-# this stack does. That remains a documented gap for a future phase.
+# `scheduler` (Sprint 4): the worker container ARCHITECTURE.md section 9
+# names. It builds from the exact same Dockerfile/context as `app` (so
+# Docker's layer cache makes its build effectively free — no new image, no
+# new dependency), then overrides the entrypoint with a trivial polling
+# loop that calls the already-running `app` service's own internal
+# endpoint (POST /api/internal/scheduler, src/app/api/internal/scheduler/
+# route.ts) on a fixed interval. All the real logic (querying for due
+# reminders, claiming them exactly once via scheduled_reminders' unique
+# constraint, sending notifications) runs inside `app`'s own already-
+# built, already-traced server process — `scheduler` itself needs nothing
+# beyond `curl`, which the image already installs for its own HEALTHCHECK.
+# No paid service, no separate build stage.
 
 services:
   postgres:
@@ -51,6 +58,7 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       NODE_ENV: production
+      SCHEDULER_SECRET: ${SCHEDULER_SECRET}
     ports:
       # Host 3001 -> container 3000: the native dev server already owns
       # host port 3000 on this machine, so the containerized app is
@@ -64,6 +72,49 @@ services:
       # survive a container rebuild, matching how postgres_data already
       # persists Postgres's own data.
       - measurement_attachments:/app/storage
+    # No `healthcheck:` override here — the Dockerfile's own HEALTHCHECK
+    # instruction (curl against /login) is baked into this image and
+    # already satisfies `scheduler`'s `condition: service_healthy` below.
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      SCHEDULER_SECRET: ${SCHEDULER_SECRET}
+      # How often to sweep for due reminders. 5 minutes is frequent enough
+      # that the tightest configurable threshold (measurementReminder
+      # MinutesBefore, default 60) still fires with several minutes of
+      # margin, without hammering the app; every condition is idempotent
+      # either way (scheduled_reminders' unique constraint), so a shorter
+      # or longer interval is safe to tune without any code change.
+      SCHEDULER_INTERVAL_SECONDS: 300
+    # Deliberately not the image's own ENTRYPOINT (migrate-then-serve) —
+    # this service is not a second app server, just a polling loop against
+    # the real one. `sh -c` is a full override, not an argument to it.
+    entrypoint: ["/bin/sh", "-c"]
+    # `$$VAR` (not `$VAR`): Compose interpolates single-`$` references in
+    # this file itself against the HOST's/`.env.docker`'s variables before
+    # the container ever starts — doubling the `$` escapes that pass, so
+    # the literal `$VAR` reaches `/bin/sh` inside the container, which
+    # expands it from ITS OWN environment (the `environment:` block above).
+    # Without this escaping, SCHEDULER_INTERVAL_SECONDS (not set on the
+    # host at all) would silently interpolate to an empty string here.
+    command:
+      - |
+        set -eu
+        echo "Scheduler worker started, polling app every $${SCHEDULER_INTERVAL_SECONDS}s..."
+        while true; do
+          curl -fsS -X POST \
+            -H "x-scheduler-secret: $${SCHEDULER_SECRET}" \
+            "http://app:3000/api/internal/scheduler" \
+            || echo "[scheduler] sweep request failed (will retry next tick)"
+          sleep "$${SCHEDULER_INTERVAL_SECONDS}"
+        done
 
 volumes:
   postgres_data:
