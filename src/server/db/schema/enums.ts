@@ -151,3 +151,18 @@ export const approvableEntityTypeEnum = pgEnum("approvable_entity_type", [
   "job_cost",
   "cash_expense_report",
 ]);
+
+/**
+ * Sprint 2 (master execution prompt section 4, "Auto-fill... submission
+ * source"): how a measurement came into the system. 'office' is the
+ * ordinary path (a measurement recorded from the job page);
+ * 'field_quick_submit' is the New Measurement quick-submit flow
+ * (measurements.glassTypeId/fieldQuotedPrice being non-null already hints
+ * at this, but that's an inference over columns meant for something else —
+ * this is the actual, durable, queryable signal, and survives even if a
+ * future office-side edit path also starts touching those same columns).
+ */
+export const measurementSourceEnum = pgEnum("measurement_source", [
+  "office",
+  "field_quick_submit",
+]);

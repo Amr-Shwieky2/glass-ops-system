@@ -28,6 +28,7 @@ import {
 import { getCommissionForJob } from "@/server/compensation/commission";
 import { getSetting } from "@/server/settings";
 import { formatILS, sumMoney } from "@/server/money";
+import { formatFieldQuotedPrice } from "@/lib/field-quoted-price";
 import { jobStatusVariant } from "@/lib/job-status-style";
 import { Forbidden } from "@/components/forbidden";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -354,9 +355,7 @@ export default async function JobDetailPage({
                   {m.fieldQuotedPrice && (
                     <div className="mt-2 rounded-md border border-warning/30 bg-warning/5 p-2 text-sm">
                       <p className="font-medium text-foreground" dir="ltr">
-                        {formatILS(m.fieldQuotedPrice)}
-                        {" · "}
-                        {m.fieldQuotedPriceIncludesVat ? "شامل الضريبة" : "قبل الضريبة"}
+                        {formatFieldQuotedPrice(m.fieldQuotedPrice, m.fieldQuotedPriceIncludesVat ?? false)}
                       </p>
                       <p className="text-xs text-warning">
                         سعر مرجعي من الميدان — غير ملزم

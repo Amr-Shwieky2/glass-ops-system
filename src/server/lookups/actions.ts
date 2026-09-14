@@ -7,6 +7,7 @@ import { db } from "@/server/db/client";
 import {
   jobStatuses,
   workTypes,
+  glassTypes,
   compensationRules,
   penaltyRules,
   bonusRules,
@@ -456,6 +457,170 @@ export async function updateWorkTypeAction(
     return {
       error: `لا يمكن تعطيل نوع العمل هذا، مستخدم في ${itemCount} بند مهمة و${ruleCount} قاعدة تعويض.`,
     };
+  }
+
+  revalidatePath("/settings");
+  return { success: true };
+}
+
+// ---------------------------------------------------------------------------
+// Glass types (master execution prompt Q4: "its own admin-editable
+// material-property list, distinct from the work category") — the New
+// Measurement quick-submit flow's glassTypeId has referenced this table
+// since it was introduced, but nothing before this let an admin manage the
+// list itself; it was seed-data-only. Deliberately the simpler of the two
+// patterns in this file (no usage-blocking-deactivation check like work
+// types): measurements.glassTypeId is onDelete:'set null'-safe and
+// deactivating never deletes a row, so an existing measurement's reference
+// is never broken by hiding the type from future selection.
+// ---------------------------------------------------------------------------
+
+const CreateGlassTypeSchema = z.object({
+  key: z
+    .string()
+    .trim()
+    .min(1, { error: "المفتاح مطلوب" })
+    .regex(/^[a-z][a-z0-9_]*$/, {
+      error: "المفتاح يجب أن يبدأ بحرف إنجليزي صغير ويحتوي على أحرف صغيرة وأرقام وشرطة سفلية فقط",
+    }),
+  labelEn: z.string().trim().min(1, { error: "التسمية بالإنجليزية مطلوبة" }),
+  labelAr: z.string().trim().min(1, { error: "التسمية بالعربية مطلوبة" }),
+  sortOrder: z.string().trim().min(1, { error: "ترتيب العرض مطلوب" }),
+});
+
+/** Creates a glass type. `key` is not editable once created — same
+ * reasoning as createWorkTypeAction's doc comment. */
+export async function createGlassTypeAction(
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const user = await getCurrentUser();
+  const permError = requireManageSettings(user);
+  if (permError) return { error: permError };
+
+  const parsed = CreateGlassTypeSchema.safeParse({
+    key: formData.get("key"),
+    labelEn: formData.get("labelEn"),
+    labelAr: formData.get("labelAr"),
+    sortOrder: formData.get("sortOrder"),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" };
+  }
+
+  const sortOrder = parseNonNegativeInt(parsed.data.sortOrder);
+  if (sortOrder === null) {
+    return { error: "ترتيب العرض يجب أن يكون رقماً صحيحاً غير سالب." };
+  }
+
+  try {
+    await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(glassTypes)
+        .values({
+          key: parsed.data.key,
+          labelEn: parsed.data.labelEn,
+          labelAr: parsed.data.labelAr,
+          sortOrder,
+        })
+        .returning({ id: glassTypes.id });
+
+      await recordAudit(
+        {
+          userId: user!.id,
+          action: "glass_type.create",
+          entityType: "glass_type",
+          entityId: row.id,
+          newValue: { ...parsed.data, sortOrder },
+        },
+        tx,
+      );
+    });
+  } catch (err: unknown) {
+    if (pgErrorCode(err) === "23505") {
+      return { error: "هذا المفتاح مستخدم بالفعل لنوع زجاج آخر." };
+    }
+    return { error: "تعذر إنشاء نوع الزجاج، حاول مرة أخرى." };
+  }
+
+  revalidatePath("/settings");
+  return { success: true };
+}
+
+const UpdateGlassTypeSchema = z.object({
+  labelEn: z.string().trim().min(1, { error: "التسمية بالإنجليزية مطلوبة" }),
+  labelAr: z.string().trim().min(1, { error: "التسمية بالعربية مطلوبة" }),
+  sortOrder: z.string().trim().min(1, { error: "ترتيب العرض مطلوب" }),
+  isActive: z.enum(["true", "false"]),
+});
+
+/** Edits a glass type's display fields. `key` is not editable — see
+ * createGlassTypeAction's doc comment. Never hard-deletes, only
+ * isActive=false. */
+export async function updateGlassTypeAction(
+  id: string,
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const user = await getCurrentUser();
+  const permError = requireManageSettings(user);
+  if (permError) return { error: permError };
+
+  const parsed = UpdateGlassTypeSchema.safeParse({
+    labelEn: formData.get("labelEn"),
+    labelAr: formData.get("labelAr"),
+    sortOrder: formData.get("sortOrder"),
+    isActive: formData.get("isActive"),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" };
+  }
+
+  const sortOrder = parseNonNegativeInt(parsed.data.sortOrder);
+  if (sortOrder === null) {
+    return { error: "ترتيب العرض يجب أن يكون رقماً صحيحاً غير سالب." };
+  }
+  const isActive = parsed.data.isActive === "true";
+
+  const [existing] = await db.select().from(glassTypes).where(eq(glassTypes.id, id)).limit(1);
+  if (!existing) return { error: "نوع الزجاج غير موجود." };
+
+  try {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(glassTypes)
+        .set({
+          labelEn: parsed.data.labelEn,
+          labelAr: parsed.data.labelAr,
+          sortOrder,
+          isActive,
+        })
+        .where(eq(glassTypes.id, id));
+
+      await recordAudit(
+        {
+          userId: user!.id,
+          action: "glass_type.update",
+          entityType: "glass_type",
+          entityId: id,
+          oldValue: {
+            labelEn: existing.labelEn,
+            labelAr: existing.labelAr,
+            sortOrder: existing.sortOrder,
+            isActive: existing.isActive,
+          },
+          newValue: {
+            labelEn: parsed.data.labelEn,
+            labelAr: parsed.data.labelAr,
+            sortOrder,
+            isActive,
+          },
+        },
+        tx,
+      );
+    });
+  } catch {
+    return { error: "تعذر تحديث نوع الزجاج، حاول مرة أخرى." };
   }
 
   revalidatePath("/settings");

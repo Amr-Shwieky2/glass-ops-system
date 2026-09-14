@@ -6,6 +6,7 @@ import { getAllSettings } from "@/server/settings";
 import {
   getAllJobStatusesIncludingInactive,
   getAllWorkTypesIncludingInactive,
+  getAllGlassTypesIncludingInactive,
   getAllCompensationRulesIncludingInactive,
   getAllPenaltyRulesIncludingInactive,
   getAllBonusRulesIncludingInactive,
@@ -21,6 +22,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { GeneralSettingsForm } from "./general-settings-form";
 import { JobStatusesSection } from "./job-statuses-section";
 import { WorkTypesSection } from "./work-types-section";
+import { GlassTypesSection } from "./glass-types-section";
 import { CompensationRulesSection } from "./compensation-rules-section";
 import { SimpleRuleSection } from "./simple-rule-section";
 
@@ -32,11 +34,12 @@ export default async function SettingsPage() {
     return <Forbidden />;
   }
 
-  const [settings, jobStatuses, workTypes, compensationRules, penaltyRules, bonusRules] =
+  const [settings, jobStatuses, workTypes, glassTypes, compensationRules, penaltyRules, bonusRules] =
     await Promise.all([
       getAllSettings(),
       getAllJobStatusesIncludingInactive(),
       getAllWorkTypesIncludingInactive(),
+      getAllGlassTypesIncludingInactive(),
       getAllCompensationRulesIncludingInactive(),
       getAllPenaltyRulesIncludingInactive(),
       getAllBonusRulesIncludingInactive(),
@@ -64,6 +67,7 @@ export default async function SettingsPage() {
           <TabsTrigger value="general">عام</TabsTrigger>
           <TabsTrigger value="job-statuses">حالات المهام</TabsTrigger>
           <TabsTrigger value="work-types">أنواع العمل</TabsTrigger>
+          <TabsTrigger value="glass-types">أنواع الزجاج</TabsTrigger>
           <TabsTrigger value="compensation">قواعد التعويض</TabsTrigger>
           <TabsTrigger value="penalties">قواعد الجزاءات</TabsTrigger>
           <TabsTrigger value="bonuses">قواعد المكافآت</TabsTrigger>
@@ -79,6 +83,10 @@ export default async function SettingsPage() {
 
         <TabsContent value="work-types">
           <WorkTypesSection workTypes={workTypes} />
+        </TabsContent>
+
+        <TabsContent value="glass-types">
+          <GlassTypesSection glassTypes={glassTypes} />
         </TabsContent>
 
         <TabsContent value="compensation">

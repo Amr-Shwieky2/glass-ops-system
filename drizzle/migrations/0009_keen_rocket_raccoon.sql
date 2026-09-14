@@ -1,0 +1,2 @@
+CREATE TYPE "public"."measurement_source" AS ENUM('office', 'field_quick_submit');--> statement-breakpoint
+ALTER TABLE "measurements" ADD COLUMN "source" "measurement_source" DEFAULT 'office' NOT NULL;

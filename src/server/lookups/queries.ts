@@ -4,6 +4,7 @@ import { db } from "@/server/db/client";
 import {
   jobStatuses,
   workTypes,
+  glassTypes,
   compensationRules,
   penaltyRules,
   bonusRules,
@@ -31,6 +32,11 @@ export async function getAllJobStatusesIncludingInactive() {
 /** All work types (active and inactive), in display order. */
 export async function getAllWorkTypesIncludingInactive() {
   return db.select().from(workTypes).orderBy(workTypes.sortOrder);
+}
+
+/** All glass types (active and inactive), in display order. */
+export async function getAllGlassTypesIncludingInactive() {
+  return db.select().from(glassTypes).orderBy(glassTypes.sortOrder);
 }
 
 export interface CompensationRuleAdminRow {

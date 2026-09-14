@@ -9,7 +9,7 @@ import {
   index,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { jobItemStatusEnum } from "./enums";
+import { jobItemStatusEnum, measurementSourceEnum } from "./enums";
 import { customers } from "./customers";
 import { jobStatuses, workTypes, glassTypes } from "./lookups";
 import { users } from "./auth";
@@ -192,6 +192,7 @@ export const measurements = pgTable(
       scale: 2,
     }),
     fieldQuotedPriceIncludesVat: boolean("field_quoted_price_includes_vat"),
+    source: measurementSourceEnum("source").notNull().default("office"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

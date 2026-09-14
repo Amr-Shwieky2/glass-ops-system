@@ -1,5 +1,17 @@
 # Sprint 0 Requirements Matrix — Glass Operations Management System
 
+## Sprint 2 changelog (2026-09-14) — field measurement quick-submit completeness
+
+Verified against the master execution prompt section 4 checklist (Q1–Q8) and the project's own design spec (`docs/superpowers/specs/2026-09-03-new-measurement-quick-submit-design.md`). Most of Sprint 2 was already IMPLEMENTED per Sprint 0 (Q1/Q2/Q3/Q5/Q7/Q8, S2.1) — this sprint closes the two named gaps plus the testing gap:
+
+- **Q4 — glass type is its own admin-editable list**: added `createGlassTypeAction`/`updateGlassTypeAction` (mirroring the existing work-types CRUD pattern) and a new "أنواع الزجاج" tab on `/settings`. Verified live in the browser: create, list, and the auto-closing dialog all work. Closes Q4.
+- **Q6 — persisted submission source**: new `measurement_source` enum column on `measurements` (migration `0009`), defaulting to `'office'`, set to `'field_quick_submit'` by `submitFieldMeasurementAction`. Previously this signal only existed as an inference over other columns and was never durably queryable. Closes Q6.
+- **S2.2 — the design spec's own missing 3rd Vitest area**: extracted the reference-price + VAT-label display formatting (previously inline JSX in two places) into a pure `formatFieldQuotedPrice` helper (`src/lib/field-quoted-price.ts`), with 6 new unit tests. Also strengthened the existing Playwright test to assert the actual rendered price figure and VAT label text, not just that a selector was clicked. Closes S2.2.
+
+**Verification**: lint clean · typecheck clean · unit 133/133 (was 127) · Playwright 30/30 · production build succeeds · migration applied and reseed verified.
+
+**Not touched in Sprint 2** (out of this sprint's scope, tracked for later): whether `fieldQuotedPrice` should itself be gated behind a financial permission the way the agreed sale price now is — it wasn't named in either audit as a leak and gating it could block the very technician who entered it from seeing their own reference figure; left as a judgment call for a future sprint if you want it revisited.
+
 ## Sprint 1 changelog (2026-09-14) — security & authorization hardening
 
 The rows below this line are the **Sprint 0 snapshot**, unedited — kept as the historical baseline. The items listed here were fixed in Sprint 1; their Sprint-0 row is now stale on these specific points. Full detail in the Sprint 1 report delivered to the user; summary:

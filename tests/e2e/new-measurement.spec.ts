@@ -4,6 +4,7 @@ import {
   demoUserId,
   uniquePhone,
   uniqueLabel,
+  moneyPattern,
 } from "./fixtures";
 
 /**
@@ -297,11 +298,17 @@ test.describe("New Measurement quick-submit (field origination)", () => {
 
     // Job detail page renders the field-submission data, explicitly
     // labeled as a non-binding reference price (spec section 7 step 4).
+    // Asserts the actual rendered price/VAT-label TEXT, not just that the
+    // "شامل الضريبة" button was clicked during submission — a swapped
+    // label or a wrong amount would previously have passed every test.
     const jobPageText = await page.innerText("body");
     expect(jobPageText).toContain("مقسّى");
     expect(jobPageText).toContain("سعر مرجعي من الميدان");
     expect(jobPageText).toContain("غير ملزم");
     expect(jobPageText).toContain("site-photo.png");
+    expect(moneyPattern("1200.00").test(jobPageText)).toBe(true);
+    expect(jobPageText).toContain("شامل الضريبة");
+    expect(jobPageText).not.toContain("قبل الضريبة");
   });
 
   test("a second submission with the same phone reuses the existing customer instead of creating a duplicate", async ({

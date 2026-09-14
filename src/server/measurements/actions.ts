@@ -294,6 +294,7 @@ export async function submitFieldMeasurementAction(
         glassTypeId: data.glassTypeId,
         fieldQuotedPrice,
         fieldQuotedPriceIncludesVat,
+        source: "field_quick_submit",
       });
 
       await tx.insert(measurementAttachments).values(
