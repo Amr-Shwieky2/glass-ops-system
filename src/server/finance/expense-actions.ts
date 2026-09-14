@@ -16,7 +16,11 @@ import { PERMISSIONS, type PermissionKey } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
 import { notifyUsers, notifyUser } from "@/server/notifications";
 import { parseNonNegativeMoneyInput, isPositive, formatILS } from "@/server/money";
-import { getOrCreateCashAccountForUser, debitCashAccount } from "@/server/finance/cash";
+import {
+  getOrCreateCashAccountForUser,
+  debitCashAccount,
+  InsufficientCashBalanceError,
+} from "@/server/finance/cash";
 import { createApprovalRequest } from "@/server/approvals/decide";
 
 export interface ActionState {
@@ -218,65 +222,79 @@ export async function decideFieldExpenseAction(
   // the real guard.
   let alreadyDecided = false;
 
-  await db.transaction(async (tx) => {
-    const [updated] = await tx
-      .update(cashExpenseReports)
-      .set(
-        approved
-          ? { status: "approved", decidedByUserId: user!.id, decidedAt: now }
-          : {
-              status: "rejected",
-              decidedByUserId: user!.id,
-              decidedAt: now,
-              rejectionReason: parsed.data.rejectionReason,
-            },
-      )
-      .where(and(eq(cashExpenseReports.id, reportId), eq(cashExpenseReports.status, "pending")))
-      .returning({ id: cashExpenseReports.id });
+  try {
+    await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(cashExpenseReports)
+        .set(
+          approved
+            ? { status: "approved", decidedByUserId: user!.id, decidedAt: now }
+            : {
+                status: "rejected",
+                decidedByUserId: user!.id,
+                decidedAt: now,
+                rejectionReason: parsed.data.rejectionReason,
+              },
+        )
+        .where(and(eq(cashExpenseReports.id, reportId), eq(cashExpenseReports.status, "pending")))
+        .returning({ id: cashExpenseReports.id });
 
-    if (!updated) {
-      alreadyDecided = true;
-      return;
-    }
+      if (!updated) {
+        alreadyDecided = true;
+        return;
+      }
 
-    if (request) {
-      await tx
-        .update(approvalRequests)
-        .set({
-          status: approved ? "approved" : "rejected",
-          decidedByUserId: user!.id,
-          decidedAt: now,
-          rejectionReason: approved ? null : parsed.data.rejectionReason,
-        })
-        .where(eq(approvalRequests.id, request.id));
-    }
+      if (request) {
+        await tx
+          .update(approvalRequests)
+          .set({
+            status: approved ? "approved" : "rejected",
+            decidedByUserId: user!.id,
+            decidedAt: now,
+            rejectionReason: approved ? null : parsed.data.rejectionReason,
+          })
+          .where(eq(approvalRequests.id, request.id));
+      }
 
-    if (approved) {
-      await debitCashAccount(tx, {
-        cashAccountId: report.cashAccountId,
-        amount: report.amount,
-        sourceType: "field_expense",
-        sourceId: report.id,
-        notes: report.description,
-        createdByUserId: user!.id,
-      });
-    }
+      if (approved) {
+        // Sprint 6: refuses (throws) rather than posting the debit if it
+        // would take the drawer negative — see assertSufficientCashBalance's
+        // own doc comment. Thrown from inside this transaction, so the
+        // status/approval_requests updates above roll back too, leaving the
+        // report exactly 'pending' again, retryable once cash is available.
+        await debitCashAccount(tx, {
+          cashAccountId: report.cashAccountId,
+          amount: report.amount,
+          sourceType: "field_expense",
+          sourceId: report.id,
+          notes: report.description,
+          createdByUserId: user!.id,
+        });
+      }
 
-    await recordAudit(
-      {
-        userId: user!.id,
-        action: "cash_expense_report.decide",
-        entityType: "cash_expense_report",
-        entityId: reportId,
-        newValue: {
-          decision: parsed.data.decision,
-          rejectionReason: parsed.data.rejectionReason,
-          ...(selfApproval.isOverride ? { selfApprovalOverride: true } : {}),
+      await recordAudit(
+        {
+          userId: user!.id,
+          action: "cash_expense_report.decide",
+          entityType: "cash_expense_report",
+          entityId: reportId,
+          newValue: {
+            decision: parsed.data.decision,
+            rejectionReason: parsed.data.rejectionReason,
+            ...(selfApproval.isOverride ? { selfApprovalOverride: true } : {}),
+          },
         },
-      },
-      tx,
-    );
-  });
+        tx,
+      );
+    });
+  } catch (err) {
+    if (err instanceof InsufficientCashBalanceError) {
+      return {
+        error: `لا يمكن اعتماد هذا المصروف — رصيد الصندوق الحالي ${formatILS(err.availableBalance)} أقل من المبلغ المطلوب ${formatILS(err.requestedAmount)}.`,
+      };
+    }
+    throw err;
+  }
 
   if (alreadyDecided) {
     return { error: "تم اتخاذ قرار بشأن هذا الطلب بالفعل." };

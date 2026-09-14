@@ -1,11 +1,21 @@
 import { Wallet } from "lucide-react";
 import type { JobPaymentsResult } from "@/server/payments/queries";
 import { formatILS } from "@/server/money";
+import {
+  PAYMENT_STATUS_LABEL_AR,
+  type PaymentStatus,
+} from "@/server/jobs/payment-status";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AddPaymentDialog } from "./add-payment-dialog";
 import { PaymentDecisionButtons } from "./payment-decision-buttons";
+
+const PAYMENT_STATUS_BADGE_VARIANT: Record<PaymentStatus, "outline" | "warning" | "success"> = {
+  not_paid: "outline",
+  partially_paid: "warning",
+  fully_paid: "success",
+};
 
 const dateFmt = new Intl.DateTimeFormat("ar", {
   year: "numeric",
@@ -40,6 +50,7 @@ export function PaymentsSection({
   jobId,
   hasSalePrice,
   paymentsResult,
+  paymentStatus,
   canCollectPayment,
   canApprovePayment,
   currentUserId,
@@ -48,6 +59,7 @@ export function PaymentsSection({
   jobId: string;
   hasSalePrice: boolean;
   paymentsResult: JobPaymentsResult;
+  paymentStatus: PaymentStatus | null;
   canCollectPayment: boolean;
   canApprovePayment: boolean;
   currentUserId: string;
@@ -61,6 +73,11 @@ export function PaymentsSection({
         <CardTitle className="flex items-center gap-2 text-base">
           <Wallet className="size-5 text-muted-foreground" />
           المدفوعات
+          {paymentStatus && (
+            <Badge variant={PAYMENT_STATUS_BADGE_VARIANT[paymentStatus]}>
+              {PAYMENT_STATUS_LABEL_AR[paymentStatus]}
+            </Badge>
+          )}
         </CardTitle>
         {canCollectPayment && <AddPaymentDialog jobId={jobId} />}
       </CardHeader>

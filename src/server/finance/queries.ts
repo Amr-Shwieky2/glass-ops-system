@@ -1,6 +1,13 @@
 import "server-only";
-import { and, desc, eq, gte, lte } from "drizzle-orm";
-import { cashAccounts, cashTransactions, cashExpenseReports, users } from "@/server/db/schema";
+import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
+import {
+  cashAccounts,
+  cashTransactions,
+  cashExpenseReports,
+  customerPayments,
+  jobs,
+  users,
+} from "@/server/db/schema";
 import { db } from "@/server/db/client";
 import { sumMoney, subtractMoney, type Money } from "@/server/money";
 
@@ -22,6 +29,12 @@ export interface CashTransaction {
   sourceId: string | null;
   notes: string | null;
   createdByUserId: string | null;
+  createdByUserName: string | null;
+  /** Only ever set for sourceType='customer_payment' — the payment's own
+   * job. Every other sourceType (transfer/adjustment/field_expense) has no
+   * job relationship in the schema (see cashTransactions.sourceId's own
+   * comment), so this is null for those, not a best-effort guess. */
+  relatedJobNumber: string | null;
   createdAt: Date;
 }
 
@@ -104,12 +117,25 @@ export interface CashTransactionFilters {
   /** Inclusive upper bound on createdAt. */
   dateTo?: Date;
   direction?: "in" | "out";
+  /** Inclusive lower bound on amount. */
+  minAmount?: Money;
+  /** Inclusive upper bound on amount. */
+  maxAmount?: Money;
+  /** A specific job's transactions only — resolved against the ONE
+   * sourceType that actually has a job relationship (see
+   * CashTransaction.relatedJobNumber's own comment); a job with no
+   * customer-payment-sourced cash transaction correctly returns nothing. */
+  jobId?: string;
 }
 
 /**
  * Full transaction history of one cash account, newest first (detail
- * view/audit — section 34/35). Optional filters compose in SQL, not in JS,
- * so a filtered view never has to fetch-then-discard rows.
+ * view/audit — section 34/35, S6.6's per-amount/per-Job/per-creator
+ * filters). Optional filters compose in SQL, not in JS, so a filtered view
+ * never has to fetch-then-discard rows. `createdByUserName` and
+ * `relatedJobNumber` are resolved here (not left for the UI to guess at)
+ * so a management screen can actually display who created a movement and
+ * which job it relates to, not just an opaque sourceType/sourceId pair.
  */
 export async function getCashTransactionHistory(
   cashAccountId: string,
@@ -119,8 +145,26 @@ export async function getCashTransactionHistory(
   if (filters.dateFrom) conditions.push(gte(cashTransactions.createdAt, filters.dateFrom));
   if (filters.dateTo) conditions.push(lte(cashTransactions.createdAt, filters.dateTo));
   if (filters.direction) conditions.push(eq(cashTransactions.direction, filters.direction));
+  if (filters.minAmount) conditions.push(gte(cashTransactions.amount, filters.minAmount));
+  if (filters.maxAmount) conditions.push(lte(cashTransactions.amount, filters.maxAmount));
+  if (filters.jobId) {
+    const jobPaymentIds = await db
+      .select({ id: customerPayments.id })
+      .from(customerPayments)
+      .where(eq(customerPayments.jobId, filters.jobId));
+    // No customer-payment-sourced cash transaction exists for this job at
+    // all — short-circuit rather than build an inArray([]) (which some
+    // drivers treat as "match nothing" and others as a SQL error).
+    if (jobPaymentIds.length === 0) return [];
+    conditions.push(
+      and(
+        eq(cashTransactions.sourceType, "customer_payment"),
+        inArray(cashTransactions.sourceId, jobPaymentIds.map((p) => p.id)),
+      )!,
+    );
+  }
 
-  return db
+  const rows = await db
     .select({
       id: cashTransactions.id,
       cashAccountId: cashTransactions.cashAccountId,
@@ -130,11 +174,34 @@ export async function getCashTransactionHistory(
       sourceId: cashTransactions.sourceId,
       notes: cashTransactions.notes,
       createdByUserId: cashTransactions.createdByUserId,
+      createdByUserName: users.name,
       createdAt: cashTransactions.createdAt,
     })
     .from(cashTransactions)
+    .leftJoin(users, eq(cashTransactions.createdByUserId, users.id))
     .where(and(...conditions))
     .orderBy(desc(cashTransactions.createdAt));
+
+  const paymentSourceIds = rows
+    .filter((r) => r.sourceType === "customer_payment" && r.sourceId)
+    .map((r) => r.sourceId!);
+  const jobByPaymentId = new Map<string, string>();
+  if (paymentSourceIds.length > 0) {
+    const paymentJobRows = await db
+      .select({ paymentId: customerPayments.id, jobNumber: jobs.jobNumber })
+      .from(customerPayments)
+      .innerJoin(jobs, eq(customerPayments.jobId, jobs.id))
+      .where(inArray(customerPayments.id, paymentSourceIds));
+    for (const r of paymentJobRows) jobByPaymentId.set(r.paymentId, r.jobNumber);
+  }
+
+  return rows.map((r) => ({
+    ...r,
+    relatedJobNumber:
+      r.sourceType === "customer_payment" && r.sourceId
+        ? (jobByPaymentId.get(r.sourceId) ?? null)
+        : null,
+  }));
 }
 
 /**

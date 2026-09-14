@@ -1,12 +1,40 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { MapPin, Phone, IdCard, Briefcase, Plus, ArrowLeft } from "lucide-react";
+import {
+  MapPin,
+  Phone,
+  IdCard,
+  Briefcase,
+  Plus,
+  ArrowLeft,
+  FileSignature,
+  Wallet,
+  FileCheck2,
+  Wrench,
+  History,
+  Banknote,
+} from "lucide-react";
 import { getCurrentUser } from "@/server/auth/session";
 import { can } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
-import { getCustomerById, getCustomerJobs, isUserInvolvedWithCustomer } from "@/server/customers/queries";
+import {
+  getCustomerById,
+  getCustomerJobs,
+  isUserInvolvedWithCustomer,
+  getCustomerQuotes,
+  getCustomerPayments,
+  getCustomerIncomingChecks,
+  getCustomerOutstandingBalance,
+  getCustomerRepairs,
+  getCustomerActivity,
+} from "@/server/customers/queries";
 import { formatILS } from "@/server/money";
+import {
+  computePaymentStatus,
+  PAYMENT_STATUS_LABEL_AR,
+  type PaymentStatus,
+} from "@/server/jobs/payment-status";
 import { jobStatusVariant } from "@/lib/job-status-style";
 import { Forbidden } from "@/components/forbidden";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -24,6 +52,86 @@ export async function generateMetadata({
   const customer = await getCustomerById(id);
   return { title: `${customer?.name ?? "عميل"} | نظام إدارة عمليات الزجاج` };
 }
+
+const dateFmt = new Intl.DateTimeFormat("ar", {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  numberingSystem: "latn",
+});
+
+const dateTimeFmt = new Intl.DateTimeFormat("ar", {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  numberingSystem: "latn",
+});
+
+const QUOTE_STATUS_LABEL_AR: Record<string, string> = {
+  draft: "مسودة",
+  sent: "مُرسل",
+  signed: "موقّع",
+  expired: "منتهي",
+  superseded: "مستبدل",
+};
+
+const QUOTE_STATUS_VARIANT: Record<string, "outline" | "info" | "success" | "destructive"> = {
+  draft: "outline",
+  sent: "info",
+  signed: "success",
+  expired: "destructive",
+  superseded: "outline",
+};
+
+const PAYMENT_METHOD_LABEL_AR: Record<string, string> = {
+  cash: "نقدية",
+  bank_transfer: "تحويل بنكي",
+  check: "شيك",
+  other: "أخرى",
+};
+
+const APPROVAL_STATUS_LABEL_AR: Record<string, string> = {
+  pending: "بانتظار الاعتماد",
+  approved: "معتمد",
+  rejected: "مرفوض",
+};
+
+const APPROVAL_STATUS_VARIANT: Record<string, "warning" | "success" | "destructive"> = {
+  pending: "warning",
+  approved: "success",
+  rejected: "destructive",
+};
+
+const CHECK_STATUS_LABEL_AR: Record<string, string> = {
+  future: "مستقبلي",
+  due_soon: "مستحق قريباً",
+  deposited: "تم الإيداع",
+  cleared: "تم التحصيل",
+  failed: "فشل",
+  cancelled: "ملغى",
+};
+
+const REPAIR_STATUS_LABEL_AR: Record<string, string> = {
+  open: "مفتوح",
+  scheduled: "مجدول",
+  in_progress: "قيد التنفيذ",
+  resolved: "تم الحل",
+};
+
+const REPAIR_STATUS_VARIANT: Record<string, "destructive" | "warning" | "info" | "success"> = {
+  open: "destructive",
+  scheduled: "warning",
+  in_progress: "info",
+  resolved: "success",
+};
+
+const PAYMENT_STATUS_BADGE_VARIANT: Record<PaymentStatus, "outline" | "warning" | "success"> = {
+  not_paid: "outline",
+  partially_paid: "warning",
+  fully_paid: "success",
+};
 
 export default async function CustomerDetailPage({
   params,
@@ -52,9 +160,33 @@ export default async function CustomerDetailPage({
     return <Forbidden />;
   }
 
-  const jobs = await getCustomerJobs(id);
   const canEdit = can(user, PERMISSIONS.EDIT_CUSTOMER);
   const canViewSalePrice = can(user, PERMISSIONS.VIEW_SALE_PRICE);
+  const canViewChecks = can(user, PERMISSIONS.MANAGE_CHECKS);
+
+  // Sprint 6 (R1.15/S6.1/S6.4): the 6 sections beyond profile+jobs this
+  // page was previously missing. Financial sections (quotes carry prices,
+  // payments, outstanding balance) are gated the SAME way the job page
+  // already gates its own sale price/payments — never rendered just
+  // because a viewer can see this customer at all. Repairs and the
+  // activity timeline carry no pricing, so they're visible to anyone who
+  // passed the involvement check above.
+  const [jobs, quotesResult, paymentsResult, checksResult, balanceResult, repairsResult, activityResult] =
+    await Promise.all([
+      getCustomerJobs(id),
+      canViewSalePrice ? getCustomerQuotes(id) : Promise.resolve([]),
+      canViewSalePrice ? getCustomerPayments(id) : Promise.resolve([]),
+      canViewChecks ? getCustomerIncomingChecks(id) : Promise.resolve([]),
+      canViewSalePrice
+        ? getCustomerOutstandingBalance(id)
+        : Promise.resolve(null),
+      getCustomerRepairs(id),
+      getCustomerActivity(id),
+    ]);
+
+  const paymentStatus = canViewSalePrice && balanceResult
+    ? computePaymentStatus(balanceResult.salePriceTotal, balanceResult.totalPaid)
+    : null;
 
   return (
     <div className="space-y-6">
@@ -180,6 +312,238 @@ export default async function CustomerDetailPage({
           </CardContent>
         </Card>
       </div>
+
+      {canViewSalePrice && balanceResult && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Banknote className="size-5 text-muted-foreground" />
+              الرصيد المستحق
+              {paymentStatus && (
+                <Badge variant={PAYMENT_STATUS_BADGE_VARIANT[paymentStatus]}>
+                  {PAYMENT_STATUS_LABEL_AR[paymentStatus]}
+                </Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
+            <div>
+              <p className="text-muted-foreground">إجمالي قيمة البيع</p>
+              <p dir="ltr" className="text-end text-xl font-bold text-foreground">
+                {formatILS(balanceResult.salePriceTotal)}
+              </p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">المحصَّل</p>
+              <p dir="ltr" className="text-end text-xl font-bold text-foreground">
+                {formatILS(balanceResult.totalPaid)}
+              </p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">المتبقي</p>
+              <p dir="ltr" className="text-end text-xl font-bold text-foreground">
+                {formatILS(balanceResult.remaining)}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {canViewSalePrice && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FileSignature className="size-5 text-muted-foreground" />
+              عروض الأسعار
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {quotesResult.length === 0 ? (
+              <EmptyState title="لا توجد عروض أسعار لهذا العميل بعد" className="border-0 p-6" />
+            ) : (
+              <ul className="divide-y">
+                {quotesResult.map((q) => (
+                  <li key={q.id} className="flex items-center justify-between py-3">
+                    <div>
+                      <p className="font-medium text-foreground">{q.quoteNumber}</p>
+                      <Link
+                        href={`/jobs/${q.jobId}`}
+                        className="text-sm text-muted-foreground hover:underline"
+                      >
+                        {q.jobNumber} · {dateFmt.format(q.createdAt)}
+                      </Link>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {q.total && (
+                        <span dir="ltr" className="text-sm text-muted-foreground">
+                          {formatILS(q.total)}
+                        </span>
+                      )}
+                      <Badge variant={QUOTE_STATUS_VARIANT[q.status] ?? "outline"}>
+                        {QUOTE_STATUS_LABEL_AR[q.status] ?? q.status}
+                      </Badge>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {canViewSalePrice && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Wallet className="size-5 text-muted-foreground" />
+              المدفوعات
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {paymentsResult.length === 0 ? (
+              <EmptyState title="لم يتم تسجيل أي دفعة بعد" className="border-0 p-6" />
+            ) : (
+              <ul className="divide-y">
+                {paymentsResult.map((p) => (
+                  <li key={p.id} className="flex items-center justify-between py-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span dir="ltr" className="font-medium text-foreground">
+                          {formatILS(p.amount)}
+                        </span>
+                        <Badge variant={APPROVAL_STATUS_VARIANT[p.approvalStatus] ?? "outline"}>
+                          {APPROVAL_STATUS_LABEL_AR[p.approvalStatus] ?? p.approvalStatus}
+                        </Badge>
+                      </div>
+                      <Link
+                        href={`/jobs/${p.jobId}`}
+                        className="text-sm text-muted-foreground hover:underline"
+                      >
+                        {p.jobNumber} · {PAYMENT_METHOD_LABEL_AR[p.method] ?? p.method} ·{" "}
+                        {p.receivedByUserName ?? "—"} ·{" "}
+                        {dateFmt.format(new Date(p.paymentDate))}
+                      </Link>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {canViewChecks && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FileCheck2 className="size-5 text-muted-foreground" />
+              الشيكات الواردة
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {checksResult.length === 0 ? (
+              <EmptyState title="لا توجد شيكات لهذا العميل" className="border-0 p-6" />
+            ) : (
+              <ul className="divide-y">
+                {checksResult.map((c) => (
+                  <li key={c.id} className="flex items-center justify-between py-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span dir="ltr" className="font-medium text-foreground">
+                          {formatILS(c.amount)}
+                        </span>
+                        <Badge variant={c.isDueSoon ? "warning" : "outline"}>
+                          {CHECK_STATUS_LABEL_AR[c.status] ?? c.status}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {c.jobNumber ? (
+                          <Link href={`/jobs/${c.jobId}`} className="hover:underline">
+                            {c.jobNumber}
+                          </Link>
+                        ) : (
+                          "بدون مهمة"
+                        )}{" "}
+                        · استحقاق {dateFmt.format(new Date(`${c.dueDate}T00:00:00`))}
+                        {c.bank ? ` · ${c.bank}` : ""}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Wrench className="size-5 text-muted-foreground" />
+            الإصلاحات (تيكون)
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {repairsResult.length === 0 ? (
+            <EmptyState title="لا توجد إصلاحات لهذا العميل" className="border-0 p-6" />
+          ) : (
+            <ul className="divide-y">
+              {repairsResult.map((r) => (
+                <li key={r.id} className="flex items-center justify-between py-3">
+                  <div>
+                    <p className="font-medium text-foreground">{r.problemDescription}</p>
+                    <Link
+                      href={`/jobs/${r.jobId}`}
+                      className="text-sm text-muted-foreground hover:underline"
+                    >
+                      {r.jobNumber} · أُبلغ عنه {dateFmt.format(new Date(`${r.dateReported}T00:00:00`))}
+                      {r.responsibleUserName ? ` · ${r.responsibleUserName}` : ""}
+                    </Link>
+                  </div>
+                  <Badge variant={REPAIR_STATUS_VARIANT[r.status] ?? "outline"}>
+                    {REPAIR_STATUS_LABEL_AR[r.status] ?? r.status}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <History className="size-5 text-muted-foreground" />
+            النشاط الأخير
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {activityResult.length === 0 ? (
+            <EmptyState title="لا يوجد نشاط مسجل بعد" className="border-0 p-6" />
+          ) : (
+            <ul className="divide-y">
+              {activityResult.map((a) => (
+                <li key={a.id} className="flex items-center justify-between py-2.5 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span dir="ltr" className="font-mono text-xs text-muted-foreground">
+                      {a.action}
+                    </span>
+                    <Link href={`/jobs/${a.jobId}`} className="text-foreground hover:underline">
+                      {a.jobNumber}
+                    </Link>
+                    {a.userName && (
+                      <span className="text-muted-foreground">بواسطة {a.userName}</span>
+                    )}
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {dateTimeFmt.format(a.createdAt)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

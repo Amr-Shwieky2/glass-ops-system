@@ -71,9 +71,19 @@ export async function recordCustomerPayment(
      * else's payment always lands pending, for a DIFFERENT
      * APPROVE_PAYMENT holder to decide. */
     actingUserIsSuperAdmin: boolean;
+    /** Sprint 6 (R1.27 fix) — set ONLY by updateIncomingCheckStatusAction
+     * (src/server/checks/actions.ts) when a check is marked 'cleared'.
+     * This is NOT a self-report of "I personally collected money" (the
+     * case the pending-by-default rule above guards against) — it is the
+     * bank confirming the check cleared, which is why this payment lands
+     * approved immediately regardless of who clicks the status change,
+     * same as the super-admin override but for a structurally different
+     * reason. Also stamps the FK so a check can never spawn two payment
+     * rows (customerPayments.sourceIncomingCheckId is UNIQUE). */
+    sourceIncomingCheckId?: string;
   },
 ): Promise<{ paymentId: string; autoApproved: boolean }> {
-  const autoApproved = params.actingUserIsSuperAdmin;
+  const autoApproved = params.actingUserIsSuperAdmin || params.sourceIncomingCheckId !== undefined;
   const now = new Date();
 
   const [payment] = await tx
@@ -93,6 +103,7 @@ export async function recordCustomerPayment(
       createdByUserId: params.actingUserId,
       approvedByUserId: autoApproved ? params.actingUserId : undefined,
       approvedAt: autoApproved ? now : undefined,
+      sourceIncomingCheckId: params.sourceIncomingCheckId,
     })
     .returning();
 

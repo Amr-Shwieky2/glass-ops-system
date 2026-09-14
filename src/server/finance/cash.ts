@@ -2,7 +2,68 @@ import "server-only";
 import { and, eq } from "drizzle-orm";
 import { cashAccounts, cashTransactions } from "@/server/db/schema";
 import type { Database } from "@/server/db/client";
-import type { Money } from "@/server/money";
+import { sumMoney, subtractMoney, isNegative, type Money } from "@/server/money";
+
+/** Thrown by assertSufficientCashBalance (Sprint 6 — cash drawers must
+ * never go negative). Callers catch this specifically and turn it into a
+ * user-facing Arabic error instead of letting it surface as an
+ * unhandled 500; throwing (rather than returning a result flag) also
+ * rolls back everything else the same transaction already did, so a
+ * refused debit never leaves a half-applied status change behind. */
+export class InsufficientCashBalanceError extends Error {
+  constructor(
+    public readonly availableBalance: Money,
+    public readonly requestedAmount: Money,
+  ) {
+    super(
+      `Insufficient cash balance: available ${availableBalance}, requested ${requestedAmount}`,
+    );
+    this.name = "InsufficientCashBalanceError";
+  }
+}
+
+/**
+ * Locks the account row (`SELECT ... FOR UPDATE OF cash_accounts`) and
+ * refuses (throws InsufficientCashBalanceError) if debiting `amount` would
+ * take its computed balance below zero (section 34/35 — a cash drawer
+ * must never go negative; live-reproducible before this check existed by
+ * transferring/reporting an expense larger than what was actually on
+ * hand). The lock is what actually makes this race-safe: without it, two
+ * concurrent debits against the same account could each read the same
+ * "balance is fine" snapshot under READ COMMITTED and both proceed,
+ * together driving it negative — locking the account row forces a second,
+ * concurrent debit attempt to wait until this transaction commits (or
+ * rolls back) before it can even read the balance, the same pattern
+ * lockJobForWrite already uses for job rows (src/server/jobs/locking.ts).
+ * `tx` must already be inside a transaction; call this BEFORE inserting
+ * the debiting cash_transactions row(s), never after.
+ */
+export async function assertSufficientCashBalance(
+  tx: Database,
+  cashAccountId: string,
+  amount: Money,
+): Promise<void> {
+  await tx
+    .select({ id: cashAccounts.id })
+    .from(cashAccounts)
+    .where(eq(cashAccounts.id, cashAccountId))
+    .for("update", { of: cashAccounts });
+
+  const transactions = await tx
+    .select({ direction: cashTransactions.direction, amount: cashTransactions.amount })
+    .from(cashTransactions)
+    .where(eq(cashTransactions.cashAccountId, cashAccountId));
+
+  const totalIn = sumMoney(transactions.filter((t) => t.direction === "in").map((t) => t.amount));
+  const totalOut = sumMoney(
+    transactions.filter((t) => t.direction === "out").map((t) => t.amount),
+  );
+  const balance = subtractMoney(totalIn, totalOut);
+  const remainingAfterDebit = subtractMoney(balance, amount);
+  if (isNegative(remainingAfterDebit)) {
+    throw new InsufficientCashBalanceError(balance, amount);
+  }
+}
 
 /**
  * Every person who can hold company cash gets exactly one cash_accounts
@@ -81,6 +142,7 @@ export async function debitCashAccount(
     createdByUserId: string;
   },
 ): Promise<void> {
+  await assertSufficientCashBalance(tx, params.cashAccountId, params.amount);
   await tx.insert(cashTransactions).values({
     cashAccountId: params.cashAccountId,
     direction: "out",

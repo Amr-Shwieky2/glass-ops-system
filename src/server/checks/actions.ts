@@ -12,6 +12,7 @@ import { recordAudit } from "@/server/audit";
 import { parseNonNegativeMoneyInput, isPositive } from "@/server/money";
 import { getSetting } from "@/server/settings";
 import { isCheckDueSoon } from "@/server/checks/queries";
+import { recordCustomerPayment } from "@/server/payments/record";
 
 export interface ActionState {
   error?: string;
@@ -131,13 +132,21 @@ export async function updateIncomingCheckStatusAction(
   }
 
   const [existing] = await db
-    .select({ id: incomingChecks.id, status: incomingChecks.status, jobId: incomingChecks.jobId })
+    .select({
+      id: incomingChecks.id,
+      status: incomingChecks.status,
+      jobId: incomingChecks.jobId,
+      customerId: incomingChecks.customerId,
+      amount: incomingChecks.amount,
+      receivedByUserId: incomingChecks.receivedByUserId,
+    })
     .from(incomingChecks)
     .where(eq(incomingChecks.id, checkId))
     .limit(1);
   if (!existing) return { error: "الشيك غير موجود." };
 
   const oldStatus = existing.status;
+  const becomingCleared = parsed.data.status === "cleared" && oldStatus !== "cleared";
 
   await db.transaction(async (tx) => {
     await tx
@@ -148,6 +157,30 @@ export async function updateIncomingCheckStatusAction(
         updatedAt: new Date(),
       })
       .where(eq(incomingChecks.id, checkId));
+
+    // Sprint 6 (R1.27 fix): a cleared check IS money the company now
+    // provably has, exactly the same as a cash/bank-transfer payment — but
+    // unlike those, nothing else in this codebase ever created a
+    // customer_payments row for it, so a cleared check's amount was
+    // invisible to the customer's computed paid total / remaining balance
+    // (and, worse, could be entered a SECOND time by hand with nothing
+    // stopping it). Only possible when the check is tied to a job — a
+    // check with no jobId (an optional field, see createIncomingCheckAction)
+    // has nothing to attribute the payment to; that stays a real, disclosed
+    // gap (see the Sprint 6 changelog), not silently worked around here.
+    if (becomingCleared && existing.jobId) {
+      await recordCustomerPayment(tx, {
+        jobId: existing.jobId,
+        customerId: existing.customerId,
+        amount: existing.amount,
+        method: "check",
+        receivedByUserId: existing.receivedByUserId ?? user!.id,
+        notes: "تم إنشاؤها تلقائياً عند تحصيل الشيك.",
+        actingUserId: user!.id,
+        actingUserIsSuperAdmin: false,
+        sourceIncomingCheckId: checkId,
+      });
+    }
 
     await recordAudit(
       {

@@ -15,6 +15,21 @@ import {
   glassTypes,
 } from "@/server/db/schema";
 
+/** Resolves a job's stable, human-entered jobNumber (e.g. "JOB-2026-0001")
+ * to its id — an exact match, for filter forms (e.g. S6.6's per-Job cash
+ * transaction filter) where a manager types the number they can see on
+ * every job page/list rather than an opaque uuid. Null when no job has
+ * that exact number (including a deleted one — a filter should not
+ * silently match against a job nobody can see). */
+export async function getJobIdByNumber(jobNumber: string): Promise<string | null> {
+  const [row] = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(and(eq(jobs.jobNumber, jobNumber.trim()), isNull(jobs.deletedAt)))
+    .limit(1);
+  return row?.id ?? null;
+}
+
 /** Jobs a restricted (VIEW_ASSIGNED_JOBS-only) viewer is "involved in" —
  * assigned to install, or the one who measured / priced / closed it
  * (section 16's three independent commercial-responsibility fields). */

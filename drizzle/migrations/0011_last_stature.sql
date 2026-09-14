@@ -1,0 +1,3 @@
+ALTER TABLE "customer_payments" ADD COLUMN "source_incoming_check_id" uuid;--> statement-breakpoint
+ALTER TABLE "customer_payments" ADD CONSTRAINT "customer_payments_source_incoming_check_id_incoming_checks_id_fk" FOREIGN KEY ("source_incoming_check_id") REFERENCES "public"."incoming_checks"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "customer_payments" ADD CONSTRAINT "customer_payments_source_incoming_check_id_unique" UNIQUE("source_incoming_check_id");

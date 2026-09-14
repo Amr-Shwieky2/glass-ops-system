@@ -12,7 +12,11 @@ import { PERMISSIONS, type PermissionKey } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
 import { notifyUsers, notifyUser } from "@/server/notifications";
 import { parseNonNegativeMoneyInput, isPositive, formatILS } from "@/server/money";
-import { getOrCreateCashAccountForUser } from "@/server/finance/cash";
+import {
+  getOrCreateCashAccountForUser,
+  assertSufficientCashBalance,
+  InsufficientCashBalanceError,
+} from "@/server/finance/cash";
 
 export interface ActionState {
   error?: string;
@@ -178,51 +182,67 @@ export async function confirmCashTransfer(transferId: string): Promise<ActionSta
   const now = new Date();
   let alreadyConfirmed = false;
 
-  await db.transaction(async (tx) => {
-    const [updated] = await tx
-      .update(cashTransfers)
-      .set({ confirmedByUserId: user!.id, confirmedAt: now })
-      .where(and(eq(cashTransfers.id, transferId), isNull(cashTransfers.confirmedAt)))
-      .returning({ id: cashTransfers.id });
+  try {
+    await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(cashTransfers)
+        .set({ confirmedByUserId: user!.id, confirmedAt: now })
+        .where(and(eq(cashTransfers.id, transferId), isNull(cashTransfers.confirmedAt)))
+        .returning({ id: cashTransfers.id });
 
-    if (!updated) {
-      alreadyConfirmed = true;
-      return;
-    }
+      if (!updated) {
+        alreadyConfirmed = true;
+        return;
+      }
 
-    await tx.insert(cashTransactions).values([
-      {
-        cashAccountId: transfer.fromCashAccountId,
-        direction: "out",
-        amount: transfer.amount,
-        sourceType: "transfer",
-        sourceId: transfer.id,
-        createdByUserId: user!.id,
-      },
-      {
-        cashAccountId: transfer.toCashAccountId,
-        direction: "in",
-        amount: transfer.amount,
-        sourceType: "transfer",
-        sourceId: transfer.id,
-        createdByUserId: user!.id,
-      },
-    ]);
+      // Sprint 6: refuses (throws, rolling back the confirmedAt update
+      // above too) rather than moving cash out of an account that doesn't
+      // actually have it — see assertSufficientCashBalance's own doc
+      // comment. Only the FROM leg is checked; the TO leg is always a
+      // credit and can never go negative.
+      await assertSufficientCashBalance(tx, transfer.fromCashAccountId, transfer.amount);
 
-    await recordAudit(
-      {
-        userId: user!.id,
-        action: "cash_transfer.confirm",
-        entityType: "cash_transfer",
-        entityId: transfer.id,
-        newValue: {
+      await tx.insert(cashTransactions).values([
+        {
+          cashAccountId: transfer.fromCashAccountId,
+          direction: "out",
           amount: transfer.amount,
-          ...(selfApproval.isOverride ? { selfApprovalOverride: true } : {}),
+          sourceType: "transfer",
+          sourceId: transfer.id,
+          createdByUserId: user!.id,
         },
-      },
-      tx,
-    );
-  });
+        {
+          cashAccountId: transfer.toCashAccountId,
+          direction: "in",
+          amount: transfer.amount,
+          sourceType: "transfer",
+          sourceId: transfer.id,
+          createdByUserId: user!.id,
+        },
+      ]);
+
+      await recordAudit(
+        {
+          userId: user!.id,
+          action: "cash_transfer.confirm",
+          entityType: "cash_transfer",
+          entityId: transfer.id,
+          newValue: {
+            amount: transfer.amount,
+            ...(selfApproval.isOverride ? { selfApprovalOverride: true } : {}),
+          },
+        },
+        tx,
+      );
+    });
+  } catch (err) {
+    if (err instanceof InsufficientCashBalanceError) {
+      return {
+        error: `لا يمكن تأكيد التسليم — الرصيد الحالي ${formatILS(err.availableBalance)} أقل من المبلغ المطلوب ${formatILS(err.requestedAmount)}.`,
+      };
+    }
+    throw err;
+  }
 
   if (alreadyConfirmed) {
     return { error: "تم تأكيد هذه العملية بالفعل." };

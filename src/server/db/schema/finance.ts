@@ -6,6 +6,7 @@ import {
   numeric,
   date,
   index,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import {
   jobCostCategoryEnum,
@@ -108,6 +109,17 @@ export const customerPayments = pgTable(
       { onDelete: "set null" },
     ),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
+    // Sprint 6 (R1.27 fix): set only when this payment was auto-created by
+    // an incoming check being marked 'cleared' (updateIncomingCheckStatusAction,
+    // src/server/checks/actions.ts) — the money is now provably in hand, so
+    // that transition creates the matching customer_payments row itself
+    // rather than leaving check money invisible to (or double-enterable
+    // against) the customer's paid total. UNIQUE so a check can never
+    // spawn two payment rows even under a race — the write path checks
+    // this first, but the constraint is the real, DB-level guarantee.
+    sourceIncomingCheckId: uuid("source_incoming_check_id")
+      .unique()
+      .references((): AnyPgColumn => incomingChecks.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

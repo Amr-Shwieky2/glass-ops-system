@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/server/auth/session";
 import { can, isSuperAdmin } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
 import { getUserBasicInfo } from "../../queries";
+import { getJobIdByNumber } from "@/server/jobs/queries";
 import {
   getTechnicianLedger,
   getBonusRules,
@@ -17,7 +18,7 @@ import {
   getPendingFieldExpenses,
 } from "@/server/finance/queries";
 import { getSetting } from "@/server/settings";
-import { formatILS, isNegative, isPositive } from "@/server/money";
+import { formatILS, isNegative, isPositive, parseNonNegativeMoneyInput } from "@/server/money";
 import { Forbidden } from "@/components/forbidden";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -112,7 +113,14 @@ export default async function TechnicianLedgerPage({
   searchParams,
 }: {
   params: Promise<{ userId: string }>;
-  searchParams: Promise<{ dateFrom?: string; dateTo?: string; direction?: string }>;
+  searchParams: Promise<{
+    dateFrom?: string;
+    dateTo?: string;
+    direction?: string;
+    minAmount?: string;
+    maxAmount?: string;
+    jobNumber?: string;
+  }>;
 }) {
   const { userId } = await params;
   const cashFilters = await searchParams;
@@ -143,6 +151,20 @@ export default async function TechnicianLedgerPage({
     cashFilters.direction && CASH_DIRECTIONS.has(cashFilters.direction)
       ? (cashFilters.direction as "in" | "out")
       : undefined;
+  const cashMinAmount = cashFilters.minAmount
+    ? (parseNonNegativeMoneyInput(cashFilters.minAmount) ?? undefined)
+    : undefined;
+  const cashMaxAmount = cashFilters.maxAmount
+    ? (parseNonNegativeMoneyInput(cashFilters.maxAmount) ?? undefined)
+    : undefined;
+  const cashJobId = cashFilters.jobNumber
+    ? await getJobIdByNumber(cashFilters.jobNumber)
+    : undefined;
+  // A job number that doesn't resolve to any real job must show ZERO
+  // results, not silently fall back to the unfiltered list — otherwise a
+  // typo would look like "this job has no cash activity" when really the
+  // filter itself never applied.
+  const jobNumberFilterMissed = Boolean(cashFilters.jobNumber) && cashJobId === null;
 
   const [{ entries, balance }, bonusRules, penaltyRules, vehicleDefaultAmount, cashBalance, cashAccountId] =
     await Promise.all([
@@ -155,11 +177,14 @@ export default async function TechnicianLedgerPage({
     ]);
 
   const [cashTransactions, pendingFieldExpenses] = await Promise.all([
-    cashAccountId
+    cashAccountId && !jobNumberFilterMissed
       ? getCashTransactionHistory(cashAccountId, {
           dateFrom: cashDateFrom && !Number.isNaN(cashDateFrom.getTime()) ? cashDateFrom : undefined,
           dateTo: cashDateTo && !Number.isNaN(cashDateTo.getTime()) ? cashDateTo : undefined,
           direction: cashDirection,
+          minAmount: cashMinAmount,
+          maxAmount: cashMaxAmount,
+          jobId: cashJobId ?? undefined,
         })
       : Promise.resolve([]),
     canManage && cashAccountId ? getPendingFieldExpenses(cashAccountId) : Promise.resolve([]),
@@ -343,6 +368,47 @@ export default async function TechnicianLedgerPage({
                 defaultValue={cashFilters.dateTo}
               />
             </div>
+            <div className="space-y-1">
+              <Label htmlFor="minAmount" className="text-xs text-muted-foreground">
+                المبلغ من
+              </Label>
+              <Input
+                id="minAmount"
+                name="minAmount"
+                type="text"
+                inputMode="decimal"
+                dir="ltr"
+                placeholder="0.00"
+                defaultValue={cashFilters.minAmount}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="maxAmount" className="text-xs text-muted-foreground">
+                المبلغ إلى
+              </Label>
+              <Input
+                id="maxAmount"
+                name="maxAmount"
+                type="text"
+                inputMode="decimal"
+                dir="ltr"
+                placeholder="0.00"
+                defaultValue={cashFilters.maxAmount}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="jobNumber" className="text-xs text-muted-foreground">
+                رقم المهمة
+              </Label>
+              <Input
+                id="jobNumber"
+                name="jobNumber"
+                type="text"
+                dir="ltr"
+                placeholder="JOB-2026-0001"
+                defaultValue={cashFilters.jobNumber}
+              />
+            </div>
             {cashFilters.direction && (
               <input type="hidden" name="direction" value={cashFilters.direction} />
             )}
@@ -355,9 +421,16 @@ export default async function TechnicianLedgerPage({
             <EmptyState
               title="لا توجد حركات نقدية"
               description={
-                cashFilters.dateFrom || cashFilters.dateTo || cashFilters.direction
-                  ? "لا توجد نتائج مطابقة لعوامل التصفية."
-                  : "لم تُسجَّل أي حركة في هذا الصندوق بعد."
+                jobNumberFilterMissed
+                  ? `لا توجد مهمة بالرقم "${cashFilters.jobNumber}".`
+                  : cashFilters.dateFrom ||
+                      cashFilters.dateTo ||
+                      cashFilters.direction ||
+                      cashFilters.minAmount ||
+                      cashFilters.maxAmount ||
+                      cashFilters.jobNumber
+                    ? "لا توجد نتائج مطابقة لعوامل التصفية."
+                    : "لم تُسجَّل أي حركة في هذا الصندوق بعد."
               }
               className="border-0 p-6"
             />
@@ -370,6 +443,8 @@ export default async function TechnicianLedgerPage({
                     <TableHead>الحركة</TableHead>
                     <TableHead>المبلغ</TableHead>
                     <TableHead>المصدر</TableHead>
+                    <TableHead>المهمة</TableHead>
+                    <TableHead>المنشئ</TableHead>
                     <TableHead>ملاحظات</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -395,6 +470,12 @@ export default async function TechnicianLedgerPage({
                       </TableCell>
                       <TableCell>
                         {CASH_SOURCE_TYPE_LABEL_AR[t.sourceType] ?? t.sourceType}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {t.relatedJobNumber ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {t.createdByUserName ?? "—"}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{t.notes ?? "—"}</TableCell>
                     </TableRow>

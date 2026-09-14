@@ -51,6 +51,17 @@ import { RepairsSection } from "./repairs-section";
 import { ConfirmRemoveButton } from "./confirm-remove-button";
 import { FieldMeasurementSuccessToast } from "./field-measurement-success-toast";
 import { deleteJobItem, removeAssignment } from "@/server/jobs/actions";
+import {
+  computePaymentStatus,
+  PAYMENT_STATUS_LABEL_AR,
+  type PaymentStatus,
+} from "@/server/jobs/payment-status";
+
+const PAYMENT_STATUS_BADGE_VARIANT: Record<PaymentStatus, "outline" | "warning" | "success"> = {
+  not_paid: "outline",
+  partially_paid: "warning",
+  fully_paid: "success",
+};
 
 export async function generateMetadata({
   params,
@@ -200,6 +211,13 @@ export default async function JobDetailPage({
   // never reach a viewer, e.g. an assigned installer, who holds none of
   // the pricing/financial permissions. See PERMISSIONS.VIEW_SALE_PRICE.
   const canViewSalePrice = can(user, PERMISSIONS.VIEW_SALE_PRICE);
+  // Sprint 6 (R1.18/S6.2/S6.3): automatic payment status, computed here
+  // (not stored) from the exact same salePriceTotal/totalApproved figures
+  // already fetched for the header/PaymentsSection above — never a second
+  // query. Gated the same as the sale price it's derived from.
+  const paymentStatus = canViewSalePrice
+    ? computePaymentStatus(job.salePriceTotal, jobPayments.totalApproved)
+    : null;
 
   const defaultValidUntil = defaultQuoteValidUntil(quoteValidityDays);
 
@@ -281,9 +299,16 @@ export default async function JobDetailPage({
             {job.salePriceTotal && canViewSalePrice && (
               <div>
                 <p className="text-muted-foreground">قيمة البيع الإجمالية</p>
-                <p dir="ltr" className="text-end font-medium text-foreground">
-                  {formatILS(job.salePriceTotal)}
-                </p>
+                <div className="flex items-center justify-end gap-2">
+                  <p dir="ltr" className="font-medium text-foreground">
+                    {formatILS(job.salePriceTotal)}
+                  </p>
+                  {paymentStatus && (
+                    <Badge variant={PAYMENT_STATUS_BADGE_VARIANT[paymentStatus]}>
+                      {PAYMENT_STATUS_LABEL_AR[paymentStatus]}
+                    </Badge>
+                  )}
+                </div>
               </div>
             )}
             {job.notes && (
@@ -536,6 +561,7 @@ export default async function JobDetailPage({
           jobId={job.id}
           hasSalePrice={job.salePriceTotal !== null}
           paymentsResult={jobPayments}
+          paymentStatus={paymentStatus}
           canCollectPayment={canCollectPayment}
           canApprovePayment={canApprovePayment}
           currentUserId={user!.id}
