@@ -370,8 +370,15 @@ test.describe("New Measurement quick-submit (field origination)", () => {
     await page.goto("/dashboard", { waitUntil: "networkidle" });
     const dashboardText = await page.innerText("body");
     expect(dashboardText).toContain("قياسات ميدانية بانتظار المراجعة");
-    expect(dashboardText).toContain(jobNumber);
-
+    // Not asserting the specific job number appears in this category's
+    // dashboard PREVIEW text: AttentionRow only renders a preview once the
+    // full set is small enough to be useful (PREVIEW_LIMIT=5, see
+    // dashboard/page.tsx's own doc comment) — with 6+ other jobs also
+    // sitting at field_submission_pending elsewhere in the suite's shared
+    // dev DB, the preview is legitimately empty even though the category
+    // itself (checked above) and total count are correct. The full,
+    // unpaginated /jobs list below is the real, non-truncated proof this
+    // job actually reached the new status.
     await page.goto("/jobs?status=field_submission_pending", { waitUntil: "networkidle" });
     const jobsListText = await page.innerText("body");
     expect(jobsListText).toContain(jobNumber);

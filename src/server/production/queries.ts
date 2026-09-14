@@ -8,6 +8,11 @@ import {
   jobs,
   customers,
   users,
+  jobItems,
+  workTypes,
+  measurements,
+  measurementAttachments,
+  glassTypes,
 } from "@/server/db/schema";
 
 /** The one production-request thread for a job (mirrors getQuoteForJob's
@@ -78,10 +83,53 @@ export type ProductionRequestForJob = NonNullable<
   Awaited<ReturnType<typeof getProductionRequestForJob>>
 >;
 
-/** Public factory-facing lookup — the token IS the security boundary here,
+export interface PublicFactoryJobItem {
+  id: string;
+  description: string | null;
+  quantity: string;
+  unit: string | null;
+  workTypeLabelAr: string | null;
+  notes: string | null;
+}
+
+export interface PublicFactoryAttachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  url: string;
+}
+
+export interface PublicFactoryMeasurement {
+  id: string;
+  glassTypeLabelAr: string | null;
+  details: string | null;
+  attachments: PublicFactoryAttachment[];
+}
+
+/**
+ * Public factory-facing lookup — the token IS the security boundary here,
  * same posture as getQuoteByPublicToken (section 44/45). Returns null for
  * any token that doesn't resolve at all; the page distinguishes
- * revoked/approved/awaiting-review/pending via fields on the result. */
+ * revoked/approved/awaiting-review/pending via fields on the result.
+ *
+ * Sprint 4 — carries exactly the production-relevant subset of the job the
+ * factory needs to actually manufacture the order: job items (work
+ * type/description/quantity/unit/production notes, deliberately never
+ * salePrice/expectedCost), measurements (glass type + the free-text
+ * measurement/dimensions record, deliberately never fieldQuotedPrice), and
+ * the measurement attachments themselves with a `url` into the FACTORY-
+ * TOKEN-scoped retrieval route (`/api/public/pr/[token]/attachments/
+ * [attachmentId]`, src/app/api/public/pr/[token]/attachments/
+ * [attachmentId]/route.ts) — never the authenticated employee-only
+ * `/api/attachments/:id` route, which a tokenless factory visitor could
+ * never call anyway. Sale price, customer payments, profitability,
+ * commissions, employee compensation, the customer's identity/national ID,
+ * and jobs.notes (general/internal job notes, not production-specific) are
+ * all deliberately excluded — this function is the one place that decides
+ * what a factory-token holder is allowed to see, so every field it selects
+ * has been checked against that list.
+ */
 export async function getProductionRequestByPublicToken(token: string) {
   const [link] = await db
     .select()
@@ -97,7 +145,7 @@ export async function getProductionRequestByPublicToken(token: string) {
     .limit(1);
   if (!request) return null;
 
-  const [jobRow, submissions] = await Promise.all([
+  const [jobRow, submissions, itemRows, measurementRows, attachmentRows] = await Promise.all([
     db
       .select({ jobNumber: jobs.jobNumber, title: jobs.title })
       .from(jobs)
@@ -109,7 +157,55 @@ export async function getProductionRequestByPublicToken(token: string) {
       .from(factorySubmissions)
       .where(eq(factorySubmissions.productionRequestId, request.id))
       .orderBy(desc(factorySubmissions.submittedAt)),
+    db
+      .select({
+        id: jobItems.id,
+        description: jobItems.description,
+        quantity: jobItems.quantity,
+        unit: jobItems.unit,
+        workTypeLabelAr: workTypes.labelAr,
+        notes: jobItems.notes,
+      })
+      .from(jobItems)
+      .leftJoin(workTypes, eq(jobItems.workTypeId, workTypes.id))
+      .where(eq(jobItems.jobId, request.jobId))
+      .orderBy(jobItems.createdAt),
+    db
+      .select({
+        id: measurements.id,
+        glassTypeLabelAr: glassTypes.labelAr,
+        details: measurements.details,
+      })
+      .from(measurements)
+      .leftJoin(glassTypes, eq(measurements.glassTypeId, glassTypes.id))
+      .where(eq(measurements.jobId, request.jobId))
+      .orderBy(desc(measurements.measuredAt)),
+    db
+      .select({
+        id: measurementAttachments.id,
+        measurementId: measurementAttachments.measurementId,
+        fileName: measurementAttachments.fileName,
+        mimeType: measurementAttachments.mimeType,
+        sizeBytes: measurementAttachments.sizeBytes,
+      })
+      .from(measurementAttachments)
+      .innerJoin(measurements, eq(measurementAttachments.measurementId, measurements.id))
+      .where(eq(measurements.jobId, request.jobId))
+      .orderBy(measurementAttachments.createdAt),
   ]);
+
+  const measurementsWithAttachments: PublicFactoryMeasurement[] = measurementRows.map((m) => ({
+    ...m,
+    attachments: attachmentRows
+      .filter((a) => a.measurementId === m.id)
+      .map((a) => ({
+        id: a.id,
+        fileName: a.fileName,
+        mimeType: a.mimeType,
+        sizeBytes: a.sizeBytes,
+        url: `/api/public/pr/${token}/attachments/${a.id}`,
+      })),
+  }));
 
   return {
     link,
@@ -118,6 +214,8 @@ export async function getProductionRequestByPublicToken(token: string) {
     submissions,
     latestSubmission: submissions[0] ?? null,
     isRevoked: link.revokedAt !== null,
+    items: itemRows as PublicFactoryJobItem[],
+    measurements: measurementsWithAttachments,
   };
 }
 

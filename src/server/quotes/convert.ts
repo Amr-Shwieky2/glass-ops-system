@@ -1,7 +1,13 @@
 import "server-only";
 import { eq } from "drizzle-orm";
 import type { Database } from "@/server/db/client";
-import { jobs, jobItems, quoteVersions, quoteItems } from "@/server/db/schema";
+import {
+  jobs,
+  jobItems,
+  quoteVersions,
+  quoteItems,
+  quoteSignatures,
+} from "@/server/db/schema";
 import { advanceJobStatus } from "@/server/jobs/status";
 import { recordAudit } from "@/server/audit";
 
@@ -48,6 +54,29 @@ export async function applySignedQuoteToJob(
     .where(eq(quoteItems.quoteVersionId, params.signedVersionId))
     .orderBy(quoteItems.sortOrder);
 
+  // Signing-time address propagation (Sprint 4): the customer's confirmed
+  // installation address/location, captured immutably on quoteSignatures at
+  // the moment of signing (never touched again — see that table's doc
+  // comment), is the best available source of truth for where the job is
+  // actually being installed. Copy it into the OPERATIONAL jobs.address/
+  // latitude/longitude (which the Call/Waze/Maps buttons and any future
+  // installer view read) — this only ever runs once per job (this whole
+  // function is guarded by callers' "not already converted" checks), and
+  // never touches quote_signatures itself, so the original signed record
+  // stays exactly as historical evidence. A quote signed with no address
+  // captured (should not happen given SignSchema requires it, but this
+  // function makes no assumptions about its caller) simply leaves the
+  // job's existing address/coordinates untouched.
+  const [signature] = await tx
+    .select({
+      address: quoteSignatures.customerAddressAtSigning,
+      latitude: quoteSignatures.latitude,
+      longitude: quoteSignatures.longitude,
+    })
+    .from(quoteSignatures)
+    .where(eq(quoteSignatures.quoteVersionId, params.signedVersionId))
+    .limit(1);
+
   await tx.delete(jobItems).where(eq(jobItems.jobId, params.jobId));
   if (items.length > 0) {
     await tx.insert(jobItems).values(
@@ -76,6 +105,9 @@ export async function applySignedQuoteToJob(
       // this parameter's own doc comment above for how each caller
       // resolves it.
       dealClosedByUserId: params.dealClosedByUserId,
+      ...(signature?.address ? { address: signature.address } : {}),
+      ...(signature?.latitude ? { latitude: signature.latitude } : {}),
+      ...(signature?.longitude ? { longitude: signature.longitude } : {}),
       updatedAt: new Date(),
     })
     .where(eq(jobs.id, params.jobId));

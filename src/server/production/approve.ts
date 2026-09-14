@@ -2,21 +2,84 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import {
   productionRequests,
   factorySubmissions,
   jobCosts,
   approvalRequests,
+  jobAssignments,
+  jobs,
+  users,
+  userPermissions,
 } from "@/server/db/schema";
 import { getCurrentUser } from "@/server/auth/session";
 import { can } from "@/server/auth/permissions";
-import { PERMISSIONS } from "@/server/auth/permission-keys";
+import { PERMISSIONS, type PermissionKey } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
-import { notifyUser } from "@/server/notifications";
+import { notifyUser, notifyUsers } from "@/server/notifications";
 import { advanceJobStatus } from "@/server/jobs/status";
 import type { ActionState } from "./actions";
+
+async function getUsersWithPermission(permissionKey: PermissionKey) {
+  return db
+    .select({ id: users.id })
+    .from(userPermissions)
+    .innerJoin(users, eq(userPermissions.userId, users.id))
+    .where(
+      and(
+        eq(userPermissions.permissionKey, permissionKey),
+        eq(users.status, "active"),
+        isNull(users.deletedAt),
+      ),
+    );
+}
+
+/**
+ * Installer side of post-signing automation (Sprint 4) — the job just
+ * became genuinely ready for installation (see advanceJobStatus(..,
+ * "ready_from_factory") right above this function's call sites). If an
+ * installer is already assigned (job_assignments, "تعيين فني" — an
+ * independent mechanism from scheduling an installation appointment, see
+ * needs-attention.ts's getJobsNeedingInstallerAssignment doc comment),
+ * dispatch them a notification now instead of leaving them to discover it.
+ * If nobody is assigned at all, this job is exactly what
+ * getJobsNeedingInstallerAssignment's dashboard tile will start surfacing —
+ * additionally nudge every ASSIGN_INSTALLER holder immediately rather than
+ * waiting for them to notice the dashboard on their own.
+ */
+async function dispatchInstallerForReadyJob(jobId: string, jobNumber: string): Promise<void> {
+  const assignedInstallers = await db
+    .select({ userId: jobAssignments.userId })
+    .from(jobAssignments)
+    .where(eq(jobAssignments.jobId, jobId));
+  const installerUserIds = Array.from(
+    new Set(assignedInstallers.map((a) => a.userId).filter((id): id is string => !!id)),
+  );
+
+  if (installerUserIds.length > 0) {
+    await notifyUsers(installerUserIds, {
+      type: "job_ready_for_installation",
+      title: `المهمة ${jobNumber} جاهزة للتركيب`,
+      relatedEntityType: "job",
+      relatedEntityId: jobId,
+    });
+    return;
+  }
+
+  const assignHolders = await getUsersWithPermission(PERMISSIONS.ASSIGN_INSTALLER);
+  await notifyUsers(
+    assignHolders.map((u) => u.id),
+    {
+      type: "job_needs_installer_assignment",
+      title: `المهمة ${jobNumber} جاهزة للتركيب ولا يوجد فني معيّن`,
+      body: "عيّن فني تركيب على المهمة من صفحتها.",
+      relatedEntityType: "job",
+      relatedEntityId: jobId,
+    },
+  );
+}
 
 /**
  * Deciding on the factory's submitted price (section 45). Approving books
@@ -165,6 +228,15 @@ export async function approveFactorySubmission(
       relatedEntityType: "job",
       relatedEntityId: request.jobId,
     });
+  }
+
+  const [readyJob] = await db
+    .select({ jobNumber: jobs.jobNumber })
+    .from(jobs)
+    .where(eq(jobs.id, request.jobId))
+    .limit(1);
+  if (readyJob) {
+    await dispatchInstallerForReadyJob(request.jobId, readyJob.jobNumber);
   }
 
   revalidatePath(`/jobs/${request.jobId}`);

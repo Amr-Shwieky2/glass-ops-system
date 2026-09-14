@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { FileX2, Ban, Clock, CheckCircle2 } from "lucide-react";
+import { FileX2, Ban, Clock, CheckCircle2, Ruler, Paperclip, FileType } from "lucide-react";
 import {
   getProductionRequestByPublicToken,
   touchFactoryLinkAccess,
@@ -8,6 +8,83 @@ import {
 import { formatILS } from "@/server/money";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { SubmitForm } from "./submit-form";
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} كيلوبايت`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} ميجابايت`;
+}
+
+/** Production-relevant specs (Sprint 4) — job items, measurement details,
+ * and the actual attachment files, via the factory-token-scoped retrieval
+ * route (see getProductionRequestByPublicToken's own doc comment for the
+ * exact exclusion list: no sale price, no customer identity, no internal
+ * notes). Replaces the old "راجع صفحة المهمة للاطلاع عليها" text mention,
+ * which pointed a factory contact — who has no login — at a page they
+ * could never actually open. */
+function ProductionSpecs({ data }: { data: PublicProductionRequest }) {
+  if (data.items.length === 0 && data.measurements.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">تفاصيل الإنتاج</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-5 text-sm">
+        {data.items.length > 0 && (
+          <ul className="divide-y">
+            {data.items.map((item) => (
+              <li key={item.id} className="py-2">
+                <p className="font-medium text-foreground">
+                  {item.workTypeLabelAr || item.description || "بند عمل"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {item.description && item.workTypeLabelAr ? `${item.description} · ` : ""}
+                  {item.quantity} {item.unit ?? ""}
+                </p>
+                {item.notes && (
+                  <p className="mt-1 text-xs text-muted-foreground">ملاحظات الإنتاج: {item.notes}</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {data.measurements.map((m) => (
+          <div key={m.id} className="space-y-2 rounded-md border p-3">
+            <div className="flex items-center gap-2 text-foreground">
+              <Ruler className="size-4 text-muted-foreground" />
+              <span className="font-medium">{m.glassTypeLabelAr ?? "قياس"}</span>
+            </div>
+            {m.details && <p className="whitespace-pre-line text-muted-foreground">{m.details}</p>}
+            {m.attachments.length > 0 && (
+              <ul className="space-y-1">
+                {m.attachments.map((a) => (
+                  <li key={a.id}>
+                    <a
+                      href={a.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 text-primary hover:underline"
+                    >
+                      {a.mimeType === "application/pdf" ? (
+                        <FileType className="size-4" />
+                      ) : (
+                        <Paperclip className="size-4" />
+                      )}
+                      {a.fileName}
+                      <span className="text-xs text-muted-foreground">
+                        ({formatFileSize(a.sizeBytes)})
+                      </span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
 
 export const metadata: Metadata = { title: "طلب إنتاج | إدارة عمليات الزجاج" };
 
@@ -125,6 +202,7 @@ export default async function PublicProductionRequestPage({
         />
         <RequestSummary data={data} />
         <LatestSubmissionSummary data={data} />
+        <ProductionSpecs data={data} />
       </div>
     );
   }
@@ -139,6 +217,7 @@ export default async function PublicProductionRequestPage({
         />
         <RequestSummary data={data} />
         <LatestSubmissionSummary data={data} />
+        <ProductionSpecs data={data} />
       </div>
     );
   }
@@ -155,6 +234,7 @@ export default async function PublicProductionRequestPage({
           description={rejected.rejectionReason || "يرجى إرسال سعر جديد."}
         />
       )}
+      <ProductionSpecs data={data} />
       <SubmitForm token={token} />
     </div>
   );

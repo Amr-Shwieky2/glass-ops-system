@@ -16,6 +16,7 @@ import {
   getFieldMeasurementsPendingReview,
   getJobsWaitingForQuoteSignature,
   getFactoryPricesWaitingApproval,
+  getJobsNeedingInstallerAssignment,
   getCustomersWithOutstandingBalance,
   getChecksDueSoon,
   getPendingApprovalsCount,
@@ -41,6 +42,7 @@ import {
   FileCheck2,
   ClipboardCheck,
   Camera,
+  HardHat,
 } from "lucide-react";
 
 export const metadata: Metadata = {
@@ -79,6 +81,7 @@ async function getDashboardStats(
   canSeeFactoryPrices: boolean,
   canSeeCustomerBalances: boolean,
   canSeeFieldMeasurementsPending: boolean,
+  canSeeInstallerAssignment: boolean,
 ) {
   const { start: todayStart, end: todayEnd } = getTodayRangeUtc();
 
@@ -94,6 +97,7 @@ async function getDashboardStats(
     fieldMeasurementsPendingReview,
     waitingForQuoteSignature,
     factoryPricesWaitingApproval,
+    jobsNeedingInstallerAssignment,
     customersWithOutstandingBalance,
     checksDueSoon,
     pendingApprovalsCount,
@@ -189,6 +193,9 @@ async function getDashboardStats(
     canSeeFactoryPrices
       ? getFactoryPricesWaitingApproval(restrictToUserId)
       : Promise.resolve({ items: [], total: 0 }),
+    canSeeInstallerAssignment
+      ? getJobsNeedingInstallerAssignment(restrictToUserId)
+      : Promise.resolve({ items: [], total: 0 }),
     canSeeCustomerBalances
       ? getCustomersWithOutstandingBalance(restrictToUserId)
       : Promise.resolve({ items: [], total: 0 }),
@@ -211,6 +218,7 @@ async function getDashboardStats(
     fieldMeasurementsPendingReview,
     waitingForQuoteSignature,
     factoryPricesWaitingApproval,
+    jobsNeedingInstallerAssignment,
     customersWithOutstandingBalance,
     checksDueSoon,
     pendingApprovalsCount,
@@ -284,6 +292,11 @@ export default async function DashboardPage() {
   // act on them, matching the same CREATE_PRICE gate the submit action
   // itself broadcasts its notification to.
   const canSeeFieldMeasurementsPending = can(user, PERMISSIONS.CREATE_PRICE);
+  // Sprint 4 — the "Needs Installer Assignment" attention item is a
+  // management/dispatch concern, gated on the same permission that governs
+  // actually assigning one ("تعيين فني" itself already requires
+  // ASSIGN_INSTALLER, see assign-dialog.tsx / assignToJob).
+  const canSeeInstallerAssignment = can(user, PERMISSIONS.ASSIGN_INSTALLER);
   const restrictToUserId = canViewAll ? undefined : user!.id;
   const stats = await getDashboardStats(
     restrictToUserId,
@@ -292,6 +305,7 @@ export default async function DashboardPage() {
     canSeeFactoryPrices,
     canSeeCustomerBalances,
     canSeeFieldMeasurementsPending,
+    canSeeInstallerAssignment,
   );
 
   const readyWithoutInstallPreview = stats.readyWithoutInstall
@@ -376,6 +390,19 @@ export default async function DashboardPage() {
           : `${r.jobNumber} — ${r.customerName}`,
       ),
       href: "/production?status=submitted",
+    });
+  }
+
+  if (canSeeInstallerAssignment && stats.jobsNeedingInstallerAssignment.total > 0) {
+    categories.push({
+      id: "needs-installer-assignment",
+      icon: HardHat,
+      label: "بحاجة إلى تعيين فني تركيب",
+      total: stats.jobsNeedingInstallerAssignment.total,
+      preview: stats.jobsNeedingInstallerAssignment.items.map(
+        (j) => `${j.jobNumber} — ${j.customerName}`,
+      ),
+      href: "/jobs?status=ready_from_factory",
     });
   }
 

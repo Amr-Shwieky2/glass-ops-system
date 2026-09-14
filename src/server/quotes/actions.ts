@@ -529,30 +529,6 @@ function summarizeJobItemsForAutoFactory(items: AutoFactoryItem[]): string {
     .join("\n");
 }
 
-interface AutoFactoryMeasurement {
-  glassTypeLabelAr: string | null;
-  attachments: unknown[];
-}
-
-/** Attachments stay behind authentication (a hardened route, per this
- * codebase's earlier stored-XSS fix) — never linked from the factory's own
- * public page. This just tells office/factory-liaison staff to go look at
- * the job page, per the New Measurement quick-submit flow's glass type /
- * attachment fields (getJobDetail). Returns null when there's nothing to
- * mention (an ordinary office-recorded measurement, or no measurement at all). */
-function buildMeasurementMentionLine(measurements: AutoFactoryMeasurement[]): string | null {
-  const glassTypeLabels = Array.from(
-    new Set(measurements.map((m) => m.glassTypeLabelAr).filter((v): v is string => !!v)),
-  );
-  const attachmentCount = measurements.reduce((sum, m) => sum + m.attachments.length, 0);
-  if (glassTypeLabels.length === 0 && attachmentCount === 0) return null;
-
-  const parts: string[] = [];
-  if (glassTypeLabels.length > 0) parts.push(`نوع الزجاج: ${glassTypeLabels.join("، ")}`);
-  if (attachmentCount > 0) parts.push(`يوجد ${attachmentCount} مرفق`);
-  return `${parts.join("، ")} - راجع صفحة المهمة للاطلاع عليها.`;
-}
-
 /**
  * Steps a-d of the auto-convert / auto-send-to-factory sequence (section
  * 20/43, driven automatically off a customer's public e-signature). Never
@@ -704,15 +680,17 @@ async function runPostSignAutomation(params: {
     }
 
     // (c) Auto-send-to-factory — build the same kind of details text the
-    // manual dialog prefills, then run the identical core logic.
+    // manual dialog prefills, then run the identical core logic. Glass
+    // type / measurement attachments are no longer mentioned as text here
+    // (Sprint 4) — the public factory page itself now renders them as real
+    // structured data (see getProductionRequestByPublicToken), so there is
+    // nothing left to point the factory toward manually.
     let details: string;
     try {
       const jobDetail = await getJobDetail(params.jobId);
-      const itemsText = summarizeJobItemsForAutoFactory(jobDetail?.items ?? []);
-      const mentionLine = buildMeasurementMentionLine(jobDetail?.measurements ?? []);
-      details = [itemsText, mentionLine].filter((line): line is string => !!line).join("\n\n");
+      details = summarizeJobItemsForAutoFactory(jobDetail?.items ?? []);
     } catch {
-      details = "راجع صفحة المهمة للتفاصيل.";
+      details = "راجع تفاصيل الإنتاج أدناه.";
     }
 
     // Same lock-then-recheck pattern as step (b): the job row is locked and

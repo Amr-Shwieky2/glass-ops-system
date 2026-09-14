@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, ne, notExists, sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import {
   jobs,
@@ -10,6 +10,7 @@ import {
   factorySubmissions,
   customerPayments,
   approvalRequests,
+  jobAssignments,
 } from "@/server/db/schema";
 import { involvementFilter } from "@/server/jobs/queries";
 import { getIncomingChecks, type IncomingCheckRow } from "@/server/checks/queries";
@@ -266,6 +267,63 @@ export async function getFactoryPricesWaitingApproval(
     })),
     total,
   };
+}
+
+export interface JobNeedingInstallerAssignmentRow {
+  id: string;
+  jobNumber: string;
+  customerName: string;
+  statusKey: string;
+  updatedAt: Date;
+}
+
+/**
+ * Jobs far enough along (ready from the factory, through installation) with
+ * ZERO rows in `job_assignments` — Sprint 4's "Needs Installer Assignment"
+ * management attention item, closing the installer half of post-signing
+ * automation. This is a genuinely different gap from the existing
+ * "ready without an installation appointment" tile on the dashboard page
+ * (computed inline there against `appointments`/`appointment_assignees`):
+ * scheduling an installation appointment and assigning an installer via
+ * job_assignments ("تعيين فني") are two independent mechanisms in this
+ * codebase (scheduleAppointmentAction never touches job_assignments, and
+ * assignToJob never touches appointments) — a job can have one without the
+ * other. Both tiles are kept, each catching what the other would miss.
+ */
+export async function getJobsNeedingInstallerAssignment(
+  restrictToUserId?: string,
+): Promise<JobsNeedingAttentionResult<JobNeedingInstallerAssignmentRow>> {
+  const rows = await db
+    .select({
+      id: jobs.id,
+      jobNumber: jobs.jobNumber,
+      customerName: customers.name,
+      statusKey: jobStatuses.key,
+      updatedAt: jobs.updatedAt,
+    })
+    .from(jobs)
+    .innerJoin(jobStatuses, eq(jobs.statusId, jobStatuses.id))
+    .innerJoin(customers, eq(jobs.customerId, customers.id))
+    .where(
+      and(
+        isNull(jobs.deletedAt),
+        inArray(jobStatuses.key, [
+          "ready_from_factory",
+          "installation_scheduled",
+          "installation_in_progress",
+        ]),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(jobAssignments)
+            .where(eq(jobAssignments.jobId, jobs.id)),
+        ),
+        ...(restrictToUserId ? [involvementFilter(restrictToUserId)!] : []),
+      ),
+    )
+    .orderBy(desc(jobs.updatedAt));
+
+  return { items: rows.slice(0, PREVIEW_LIMIT), total: rows.length };
 }
 
 export interface CustomerWithOutstandingBalanceRow {
