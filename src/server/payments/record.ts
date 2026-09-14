@@ -63,10 +63,17 @@ export async function recordCustomerPayment(
     receivedByUserId: string;
     notes?: string;
     actingUserId: string;
-    actingUserCanApprove: boolean;
+    /** Master prompt section 9: a requester cannot approve their own
+     * request. Recording a payment and having it land already-approved
+     * IS a self-approval shortcut, so this is true only for a super
+     * admin's explicit override (see src/server/auth/permissions.ts
+     * isSuperAdmin) — never merely "holds APPROVE_PAYMENT". Everyone
+     * else's payment always lands pending, for a DIFFERENT
+     * APPROVE_PAYMENT holder to decide. */
+    actingUserIsSuperAdmin: boolean;
   },
 ): Promise<{ paymentId: string; autoApproved: boolean }> {
-  const autoApproved = params.actingUserCanApprove;
+  const autoApproved = params.actingUserIsSuperAdmin;
   const now = new Date();
 
   const [payment] = await tx
@@ -80,7 +87,10 @@ export async function recordCustomerPayment(
       receivedByUserId: params.receivedByUserId,
       notes: params.notes,
       approvalStatus: autoApproved ? "approved" : "pending",
-      createdByUserId: autoApproved ? params.actingUserId : undefined,
+      // Always recorded, regardless of approval status — this is who
+      // requested the payment be entered, and the self-approval check in
+      // decideCustomerPaymentAction depends on knowing that reliably.
+      createdByUserId: params.actingUserId,
       approvedByUserId: autoApproved ? params.actingUserId : undefined,
       approvedAt: autoApproved ? now : undefined,
     })
@@ -117,6 +127,7 @@ export async function recordCustomerPayment(
         amount: params.amount,
         method: params.method,
         autoApproved,
+        ...(autoApproved ? { selfApprovalOverride: true } : {}),
       },
     },
     tx,

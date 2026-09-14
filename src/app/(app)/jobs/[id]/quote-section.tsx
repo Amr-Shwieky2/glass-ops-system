@@ -57,6 +57,7 @@ export function QuoteSection({
   canCreateQuote,
   canSendQuote,
   canCloseDeal,
+  canViewSalePrice,
 }: {
   jobId: string;
   quote: QuoteForJob | null;
@@ -68,6 +69,13 @@ export function QuoteSection({
   canCreateQuote: boolean;
   canSendQuote: boolean;
   canCloseDeal: boolean;
+  /** Sprint 1 security hardening: a quote is fundamentally a pricing
+   * document — its unit prices/line totals/grand total must never reach a
+   * job viewer without pricing visibility, the same gate the job page's
+   * own sale-price figures use. Non-price quote metadata (number,
+   * version, status, validity, signed badge) stays visible to any job
+   * viewer, same treatment as ProductionSection's factory price. */
+  canViewSalePrice: boolean;
 }) {
   const version = quote?.currentVersion ?? null;
 
@@ -117,37 +125,43 @@ export function QuoteSection({
                 {version.validUntil && ` · صالح حتى ${dateFmt.format(new Date(version.validUntil))}`}
                 {quote.isExpired && " · منتهي الصلاحية"}
               </span>
-              <a
-                href={`/api/quotes/${quote.id}/pdf`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
-              >
-                · عرض PDF
-              </a>
+              {canViewSalePrice && (
+                <a
+                  href={`/api/quotes/${quote.id}/pdf`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                >
+                  · عرض PDF
+                </a>
+              )}
             </p>
 
-            <ul className="divide-y rounded-lg border">
-              {version.items.map((item) => (
-                <li key={item.id} className="flex items-center justify-between p-3 text-sm">
-                  <div>
-                    <p className="font-medium text-foreground">
-                      {item.workTypeLabelAr || item.description}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {item.quantity} {unitLabelAr(item.unit)} × {formatILS(item.unitPrice)}
-                    </p>
-                  </div>
-                  <span dir="ltr" className="font-medium text-foreground">
-                    {formatILS(item.lineTotal)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <div className="flex items-center justify-between text-base font-bold">
-              <span>الإجمالي</span>
-              <span dir="ltr">{formatILS(version.total)}</span>
-            </div>
+            {canViewSalePrice && (
+              <>
+                <ul className="divide-y rounded-lg border">
+                  {version.items.map((item) => (
+                    <li key={item.id} className="flex items-center justify-between p-3 text-sm">
+                      <div>
+                        <p className="font-medium text-foreground">
+                          {item.workTypeLabelAr || item.description}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.quantity} {unitLabelAr(item.unit)} × {formatILS(item.unitPrice)}
+                        </p>
+                      </div>
+                      <span dir="ltr" className="font-medium text-foreground">
+                        {formatILS(item.lineTotal)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex items-center justify-between text-base font-bold">
+                  <span>الإجمالي</span>
+                  <span dir="ltr">{formatILS(version.total)}</span>
+                </div>
+              </>
+            )}
 
             {quote.status === "signed" && (
               <div className="flex items-center gap-2 rounded-lg bg-green-50 p-3 text-sm text-green-800">

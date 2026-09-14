@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Ruler, ListChecks, Users2, MapPin, Calendar, Paperclip } from "lucide-react";
 import { getCurrentUser } from "@/server/auth/session";
-import { can, canAny } from "@/server/auth/permissions";
+import { can, canAny, isSuperAdmin } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
 import {
   getJobDetail,
@@ -194,6 +194,11 @@ export default async function JobDetailPage({
     PERMISSIONS.VIEW_TECHNICIAN_BALANCES,
   ]);
   const canManageTechnicianPayments = can(user, PERMISSIONS.MANAGE_TECHNICIAN_PAYMENTS);
+  // Sprint 1 (security hardening): the agreed sale price is a protected
+  // financial value like profitability/job-costs (section 65) — it must
+  // never reach a viewer, e.g. an assigned installer, who holds none of
+  // the pricing/financial permissions. See PERMISSIONS.VIEW_SALE_PRICE.
+  const canViewSalePrice = can(user, PERMISSIONS.VIEW_SALE_PRICE);
 
   const defaultValidUntil = defaultQuoteValidUntil(quoteValidityDays);
 
@@ -272,7 +277,7 @@ export default async function JobDetailPage({
                 {dateFmt.format(job.createdAt)}
               </p>
             </div>
-            {job.salePriceTotal && (
+            {job.salePriceTotal && canViewSalePrice && (
               <div>
                 <p className="text-muted-foreground">قيمة البيع الإجمالية</p>
                 <p dir="ltr" className="text-end font-medium text-foreground">
@@ -295,7 +300,7 @@ export default async function JobDetailPage({
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold text-foreground" dir="ltr">
-              {itemsTotal ? formatILS(itemsTotal) : "—"}
+              {itemsTotal && canViewSalePrice ? formatILS(itemsTotal) : "—"}
             </p>
             <p className="text-sm text-muted-foreground">
               {job.items.length} {job.items.length === 1 ? "بند" : "بنود"}
@@ -413,7 +418,7 @@ export default async function JobDetailPage({
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
-                    {item.salePrice && (
+                    {item.salePrice && canViewSalePrice && (
                       <span dir="ltr" className="text-sm font-medium text-foreground">
                         {formatILS(item.salePrice)}
                       </span>
@@ -444,6 +449,7 @@ export default async function JobDetailPage({
         canCreateQuote={canCreateQuote}
         canSendQuote={canSendQuote}
         canCloseDeal={canCloseDeal}
+        canViewSalePrice={canViewSalePrice}
       />
 
       <ProductionSection
@@ -452,6 +458,7 @@ export default async function JobDetailPage({
         jobItems={job.items}
         canCreateProductionOrder={canCreateProductionOrder}
         canApproveFactoryPrice={canApproveFactoryPrice}
+        canViewJobCosts={canViewJobCosts}
       />
 
       {canViewJobCosts && (
@@ -462,6 +469,8 @@ export default async function JobDetailPage({
           canViewProfitability={canViewProfitability}
           canManageJobCosts={canManageJobCosts}
           canApproveRequests={canApproveRequests}
+          currentUserId={user!.id}
+          isSuperAdminUser={isSuperAdmin(user)}
           externalContractors={externalContractors}
         />
       )}
@@ -530,6 +539,8 @@ export default async function JobDetailPage({
           paymentsResult={jobPayments}
           canCollectPayment={canCollectPayment}
           canApprovePayment={canApprovePayment}
+          currentUserId={user!.id}
+          isSuperAdminUser={isSuperAdmin(user)}
         />
       )}
 

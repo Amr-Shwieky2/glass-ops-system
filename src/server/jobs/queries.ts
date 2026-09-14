@@ -37,6 +37,26 @@ export function involvementFilter(viewerUserId: string) {
   );
 }
 
+/**
+ * Whether `userId` may see `jobId` at all — VIEW_ALL_JOBS bypasses this
+ * (caller must check that separately), otherwise true only if the same
+ * involvementFilter used everywhere else in this file matches. Sprint 1
+ * security hardening: several job-scoped Server Actions (createMeasurement
+ * chief among them) previously checked only a permission KEY, never
+ * whether the caller could already see the job — letting a restricted
+ * user, e.g., self-grant future visibility into an arbitrary job by
+ * setting themselves as its measuredByUserId. Call this before trusting
+ * any client-supplied jobId in a mutation.
+ */
+export async function isJobVisibleToUser(jobId: string, userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(and(eq(jobs.id, jobId), involvementFilter(userId)))
+    .limit(1);
+  return !!row;
+}
+
 export interface ListJobsParams {
   search?: string;
   statusKey?: string;

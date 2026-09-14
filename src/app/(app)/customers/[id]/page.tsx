@@ -5,7 +5,7 @@ import { MapPin, Phone, IdCard, Briefcase, Plus, ArrowLeft } from "lucide-react"
 import { getCurrentUser } from "@/server/auth/session";
 import { can } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
-import { getCustomerById, getCustomerJobs } from "@/server/customers/queries";
+import { getCustomerById, getCustomerJobs, isUserInvolvedWithCustomer } from "@/server/customers/queries";
 import { formatILS } from "@/server/money";
 import { jobStatusVariant } from "@/lib/job-status-style";
 import { Forbidden } from "@/components/forbidden";
@@ -39,8 +39,22 @@ export default async function CustomerDetailPage({
   const customer = await getCustomerById(id);
   if (!customer) notFound();
 
+  // Sprint 1 security hardening: VIEW_CUSTOMERS alone used to be enough to
+  // read ANY customer's full profile, national ID included, regardless of
+  // whether the viewer has ever worked their jobs — live-demonstrated
+  // during the Sprint 0 audit. Mirrors /jobs/[id]'s own "VIEW_ALL_JOBS or
+  // involvement" gate, plus CREATE_CUSTOMER for the same reason listed on
+  // the /customers list page (a customer with no job yet must still be
+  // visible to whoever just created them).
+  const canBrowseAll =
+    can(user, PERMISSIONS.VIEW_ALL_JOBS) || can(user, PERMISSIONS.CREATE_CUSTOMER);
+  if (!canBrowseAll && !(await isUserInvolvedWithCustomer(id, user!.id))) {
+    return <Forbidden />;
+  }
+
   const jobs = await getCustomerJobs(id);
   const canEdit = can(user, PERMISSIONS.EDIT_CUSTOMER);
+  const canViewSalePrice = can(user, PERMISSIONS.VIEW_SALE_PRICE);
 
   return (
     <div className="space-y-6">
@@ -150,7 +164,7 @@ export default async function CustomerDetailPage({
                       )}
                     </div>
                     <div className="flex items-center gap-3">
-                      {job.salePriceTotal && (
+                      {job.salePriceTotal && canViewSalePrice && (
                         <span dir="ltr" className="text-sm text-muted-foreground">
                           {formatILS(job.salePriceTotal)}
                         </span>

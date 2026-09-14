@@ -22,6 +22,7 @@ import { nextDocumentNumber } from "@/server/numbering";
 import { isPlausiblePhone, normalizePhone } from "@/server/tokens";
 import { parseNonNegativeMoneyInput } from "@/server/money";
 import { COMPANY_TIMEZONE } from "@/lib/company-day";
+import { isJobVisibleToUser } from "@/server/jobs/queries";
 
 export interface ActionState {
   error?: string;
@@ -178,6 +179,15 @@ export async function createMeasurement(
   const user = await getCurrentUser();
   if (!can(user, PERMISSIONS.CREATE_MEASUREMENT)) {
     return { error: "لا تملك صلاحية تسجيل القياسات." };
+  }
+  // The UI only ever reaches this action from a job page the caller could
+  // already open, but a Server Action is a public RPC endpoint regardless
+  // of which UI calls it — re-derive visibility here rather than trusting
+  // the client-supplied jobId, or a restricted user could self-grant
+  // future visibility into an arbitrary job by setting themselves as its
+  // measuredByUserId (see isJobVisibleToUser's doc comment).
+  if (!can(user, PERMISSIONS.VIEW_ALL_JOBS) && !(await isJobVisibleToUser(jobId, user!.id))) {
+    return { error: "لا تملك صلاحية الوصول إلى هذه المهمة." };
   }
 
   const parsed = MeasurementSchema.safeParse({

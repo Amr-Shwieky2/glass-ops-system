@@ -21,6 +21,7 @@ import { parseNonNegativeMoneyInput, formatILS } from "@/server/money";
 import { createApprovalRequest } from "@/server/approvals/decide";
 import { lockJobForWrite } from "@/server/jobs/locking";
 import { createProductionRequest } from "./create-request";
+import { checkRateLimit } from "@/server/security/rate-limit";
 
 export interface ActionState {
   error?: string;
@@ -142,6 +143,15 @@ export async function submitFactoryPriceAction(
   _prevState: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
+  const rate = checkRateLimit(`factory-submit:${token}`, {
+    maxAttempts: 10,
+    windowMs: 10 * 60_000,
+    blockMs: 10 * 60_000,
+  });
+  if (!rate.allowed) {
+    return { error: "محاولات كثيرة جداً. حاول مرة أخرى بعد قليل." };
+  }
+
   const parsed = SubmitFactoryPriceSchema.safeParse({
     submittedPrice: formData.get("submittedPrice"),
     notes: emptyToUndefined(formData.get("notes")),

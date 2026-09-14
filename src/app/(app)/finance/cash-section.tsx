@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Wallet, Building2, User as UserIcon } from "lucide-react";
 import type { AuthedUser } from "@/server/auth/session";
-import { can } from "@/server/auth/permissions";
+import { can, isSuperAdmin } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
 import { getCashAccountBalances } from "@/server/finance/queries";
 import { getPendingCashTransfers } from "./queries";
@@ -120,7 +120,7 @@ export async function CashSection({ user }: { user: AuthedUser }) {
                       {t.notes ? ` · ${t.notes}` : ""}
                     </p>
                   </div>
-                  {canManageTechPayments && (
+                  {canManageTechPayments && (isSuperAdmin(user) || t.fromUserId !== user.id) && (
                     <ConfirmTransferButton
                       transferId={t.id}
                       amount={t.amount}

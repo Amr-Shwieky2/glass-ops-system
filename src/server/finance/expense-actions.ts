@@ -11,7 +11,7 @@ import {
   userPermissions,
 } from "@/server/db/schema";
 import { getCurrentUser } from "@/server/auth/session";
-import { can } from "@/server/auth/permissions";
+import { can, requesterMayApprove } from "@/server/auth/permissions";
 import { PERMISSIONS, type PermissionKey } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
 import { notifyUsers, notifyUser } from "@/server/notifications";
@@ -191,6 +191,11 @@ export async function decideFieldExpenseAction(
     return { error: "تم اتخاذ قرار بشأن هذا الطلب بالفعل." };
   }
 
+  const selfApproval = requesterMayApprove(user, report.reportedByUserId);
+  if (!selfApproval.allowed) {
+    return { error: "لا يمكنك اعتماد مصروفاً أبلغتَ عنه بنفسك." };
+  }
+
   const [request] = await db
     .select()
     .from(approvalRequests)
@@ -263,7 +268,11 @@ export async function decideFieldExpenseAction(
         action: "cash_expense_report.decide",
         entityType: "cash_expense_report",
         entityId: reportId,
-        newValue: { decision: parsed.data.decision, rejectionReason: parsed.data.rejectionReason },
+        newValue: {
+          decision: parsed.data.decision,
+          rejectionReason: parsed.data.rejectionReason,
+          ...(selfApproval.isOverride ? { selfApprovalOverride: true } : {}),
+        },
       },
       tx,
     );

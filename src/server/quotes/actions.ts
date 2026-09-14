@@ -28,6 +28,7 @@ import { getJobDetail } from "@/server/jobs/queries";
 import { createProductionRequest } from "@/server/production/create-request";
 import { createQuoteVersion, type QuoteItemInput } from "./versions";
 import { applySignedQuoteToJob } from "./convert";
+import { checkRateLimit } from "@/server/security/rate-limit";
 
 export interface ActionState {
   error?: string;
@@ -318,6 +319,15 @@ export async function signQuotePublicly(
   _prevState: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
+  const rate = checkRateLimit(`sign-quote:${token}`, {
+    maxAttempts: 10,
+    windowMs: 10 * 60_000,
+    blockMs: 10 * 60_000,
+  });
+  if (!rate.allowed) {
+    return { error: "محاولات كثيرة جداً. حاول مرة أخرى بعد قليل." };
+  }
+
   const parsed = SignSchema.safeParse({
     customerNameAtSigning: formData.get("customerNameAtSigning"),
     customerPhoneAtSigning: emptyToUndefined(formData.get("customerPhoneAtSigning")),

@@ -63,7 +63,7 @@ async function quoteAndSignQuote(
 }
 
 test.describe("payment status + approval", () => {
-  test("remaining balance recomputes from approved transactions only, and approval depends on the ACTOR's own permission (never who received it)", async ({
+  test("remaining balance recomputes from approved transactions only, and a payment's creator can never decide their own payment even when they hold APPROVE_PAYMENT", async ({
     page,
     loginAs,
     db,
@@ -117,13 +117,34 @@ test.describe("payment status + approval", () => {
     expect(moneyPattern("600.00").test(text)).toBe(true); // remaining = 1000 - 400
 
     // Mohammad (who himself holds APPROVE_PAYMENT) records the remaining
-    // 600 -> auto-approved in the SAME action, no separate decision step —
-    // recordCustomerPayment's documented actingUserCanApprove behavior.
+    // 600 -> lands PENDING, same as anyone else's payment: recording and
+    // approving are the same actor here, and a requester may not approve
+    // their own request (master prompt section 9) merely by virtue of
+    // holding the approve permission. Only a super admin's explicit
+    // override auto-approves (see recordCustomerPayment's
+    // actingUserIsSuperAdmin param) — Mohammad is a regular manager, not
+    // the seeded super admin.
     await page.click('button:has-text("إضافة دفعة")');
     dialog = page.locator('[role="dialog"]');
     await dialog.locator("#amount").fill("600");
     await dialog.locator('button:has-text("إضافة الدفعة")').click();
     await page.waitForSelector("text=تم تسجيل الدفعة", { timeout: 10_000 });
+    await page.waitForTimeout(400);
+    text = await page.innerText("body");
+    expect(text).toContain("بانتظار الاعتماد"); // still pending — Mohammad requested it
+    expect(moneyPattern("600.00").test(text)).toBe(true); // remaining still 400 collected / 600 owed
+
+    // Mohammad himself cannot approve his own pending payment — the
+    // approve button must not even be offered for a payment he created.
+    const ownPendingRow = page.locator("li", { hasText: "600.00" }).filter({ hasText: "بانتظار الاعتماد" });
+    await expect(ownPendingRow.locator('button:has-text("اعتماد")')).toHaveCount(0);
+
+    // A different APPROVE_PAYMENT holder (the super admin) decides it.
+    await loginAs(page, "amr");
+    await page.goto(job.href, { waitUntil: "networkidle" });
+    await page.click('button:has-text("اعتماد")');
+    await page.locator('[role="alertdialog"]').locator('button:has-text("اعتماد")').click();
+    await page.waitForSelector("text=تم اعتماد الدفعة", { timeout: 10_000 });
     await page.waitForTimeout(400);
     text = await page.innerText("body");
     expect(text.match(/بانتظار الاعتماد/g)?.length ?? 0).toBe(0); // no pending badge anywhere now

@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { jobs, jobStatuses } from "@/server/db/schema";
 import { getCurrentUser } from "@/server/auth/session";
-import { can } from "@/server/auth/permissions";
+import { can, isSuperAdmin } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
 import { parseNonNegativeMoneyInput, isPositive } from "@/server/money";
 import { recordCustomerPayment, getUserIdsWithPermission } from "@/server/payments/record";
@@ -70,8 +70,6 @@ export async function addPaymentAction(
     .limit(1);
   if (!job) return { error: "المهمة غير موجودة" };
 
-  const actingUserCanApprove = can(user, PERMISSIONS.APPROVE_PAYMENT);
-
   const { autoApproved } = await db.transaction((tx) =>
     recordCustomerPayment(tx, {
       jobId,
@@ -81,7 +79,7 @@ export async function addPaymentAction(
       receivedByUserId: user!.id,
       notes: parsed.data.notes,
       actingUserId: user!.id,
-      actingUserCanApprove,
+      actingUserIsSuperAdmin: isSuperAdmin(user),
     }),
   );
 

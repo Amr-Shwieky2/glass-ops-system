@@ -48,6 +48,8 @@ export function CostsSection({
   canViewProfitability,
   canManageJobCosts,
   canApproveRequests,
+  currentUserId,
+  isSuperAdminUser,
   externalContractors,
 }: {
   jobId: string;
@@ -56,6 +58,12 @@ export function CostsSection({
   canViewProfitability: boolean;
   canManageJobCosts: boolean;
   canApproveRequests: boolean;
+  /** Master prompt section 9: a requester cannot approve their own
+   * request. The decide buttons must not even render for the cost's own
+   * creator (server-side hiding, not just the action rejecting the
+   * attempt) unless the viewer is the super admin override. */
+  currentUserId: string;
+  isSuperAdminUser: boolean;
   externalContractors: { id: string; name: string }[];
 }) {
   const { costs, totalApproved } = costsResult;
@@ -142,9 +150,11 @@ export function CostsSection({
                     </p>
                   </div>
                 </div>
-                {c.status === "pending" && canApproveRequests && (
-                  <CostDecisionButtons costId={c.id} amount={c.amount} />
-                )}
+                {c.status === "pending" &&
+                  canApproveRequests &&
+                  (isSuperAdminUser || c.createdByUserId !== currentUserId) && (
+                    <CostDecisionButtons costId={c.id} amount={c.amount} />
+                  )}
               </li>
             ))}
           </ul>

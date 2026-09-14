@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { appointments, appointmentAssignees, jobs, jobStatuses } from "@/server/db/schema";
 import { getCurrentUser } from "@/server/auth/session";
@@ -12,7 +12,7 @@ import { PERMISSIONS, type PermissionKey } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
 import { notifyUsers } from "@/server/notifications";
 import { advanceJobStatus } from "@/server/jobs/status";
-import { getAssigneeConflicts } from "@/server/appointments/queries";
+import { getAssigneeConflicts, isAppointmentAssignee } from "@/server/appointments/queries";
 import { COMPANY_TIMEZONE } from "@/lib/company-day";
 
 export interface ActionState {
@@ -228,29 +228,60 @@ export async function cancelAppointmentAction(
   appointmentId: string,
 ): Promise<ActionState> {
   const user = await getCurrentUser();
-  if (!canAny(user, SCHEDULING_PERMISSIONS)) {
-    return { error: "لا تملك صلاحية إلغاء المواعيد." };
+  if (!user) return { error: "يجب تسجيل الدخول." };
+
+  // Never trust the caller-supplied jobId for the write itself — only the
+  // appointment's OWN jobId (looked up here) is used below, matching the
+  // ownership-check pattern the rest of this file uses (see
+  // isAssignedToJob / isAppointmentAssignee). The parameter is only used
+  // afterward, to revalidate the page the caller is presumably on.
+  const [appointment] = await db
+    .select({ id: appointments.id, jobId: appointments.jobId, status: appointments.status })
+    .from(appointments)
+    .where(eq(appointments.id, appointmentId))
+    .limit(1);
+  if (!appointment) return { error: "الموعد غير موجود." };
+
+  const isAssignee = await isAppointmentAssignee(appointmentId, user.id);
+  if (!isAssignee && !canAny(user, SCHEDULING_PERMISSIONS)) {
+    return { error: "لا تملك صلاحية إلغاء هذا الموعد." };
   }
 
+  let alreadyHandled = false;
   await db.transaction(async (tx) => {
-    await tx
+    const [updated] = await tx
       .update(appointments)
       .set({ status: "cancelled", updatedAt: new Date() })
-      .where(eq(appointments.id, appointmentId));
+      .where(
+        and(
+          eq(appointments.id, appointmentId),
+          inArray(appointments.status, ["scheduled", "arrived"]),
+        ),
+      )
+      .returning({ id: appointments.id });
+
+    if (!updated) {
+      alreadyHandled = true;
+      return;
+    }
 
     await recordAudit(
       {
-        userId: user!.id,
+        userId: user.id,
         action: "appointment.cancel",
         entityType: "job",
-        entityId: jobId,
+        entityId: appointment.jobId,
         newValue: { appointmentId },
       },
       tx,
     );
   });
 
-  revalidatePath(`/jobs/${jobId}`);
+  if (alreadyHandled) {
+    return { error: "تم التعامل مع هذا الموعد بالفعل." };
+  }
+
+  revalidatePath(`/jobs/${appointment.jobId}`);
   revalidatePath("/calendar");
   revalidatePath("/my-day");
   revalidatePath("/dashboard");
@@ -264,24 +295,6 @@ export async function cancelAppointmentAction(
 // physically on site" is a finer-grained signal than that pipeline models,
 // so it stays confined to the appointment row.
 // ---------------------------------------------------------------------
-
-/** Whether `userId` is one of `appointmentId`'s assignees. */
-async function isAppointmentAssignee(
-  appointmentId: string,
-  userId: string,
-): Promise<boolean> {
-  const [row] = await db
-    .select({ userId: appointmentAssignees.userId })
-    .from(appointmentAssignees)
-    .where(
-      and(
-        eq(appointmentAssignees.appointmentId, appointmentId),
-        eq(appointmentAssignees.userId, userId),
-      ),
-    )
-    .limit(1);
-  return !!row;
-}
 
 export async function markAppointmentArrivedAction(
   appointmentId: string,

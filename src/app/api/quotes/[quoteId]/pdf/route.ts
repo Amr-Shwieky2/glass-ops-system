@@ -42,6 +42,13 @@ export async function GET(
   if (!can(user, PERMISSIONS.VIEW_ALL_JOBS) && !isInvolved) {
     return NextResponse.json({ error: "لا تملك صلاحية الوصول." }, { status: 403 });
   }
+  // A quote PDF is fundamentally a pricing document — job involvement
+  // alone (e.g. an assigned installer) is not enough; the viewer also
+  // needs pricing visibility (Sprint 1 security hardening, same root
+  // cause as the sale-price leak on the job page).
+  if (!can(user, PERMISSIONS.VIEW_SALE_PRICE)) {
+    return NextResponse.json({ error: "لا تملك صلاحية الوصول." }, { status: 403 });
+  }
 
   const settings = await getAllSettings();
   const html = renderQuoteHtml({

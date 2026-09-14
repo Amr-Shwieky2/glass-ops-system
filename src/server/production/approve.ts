@@ -42,9 +42,6 @@ export async function approveFactorySubmission(
     .where(eq(factorySubmissions.id, submissionId))
     .limit(1);
   if (!submission) return { error: "العرض غير موجود." };
-  if (submission.approvalStatus !== "pending") {
-    return { error: "تم اتخاذ قرار بشأن هذا العرض بالفعل." };
-  }
 
   const [request] = await db
     .select()
@@ -53,12 +50,55 @@ export async function approveFactorySubmission(
     .limit(1);
   if (!request) return { error: "طلب الإنتاج غير موجود." };
 
+  // The submission's OWN request.jobId is the only jobId ever written
+  // below — never the caller-supplied parameter. Without this, a tampered
+  // client call could book a real, approved factory cost (and advance job
+  // status) on a job the caller merely names, not the one the factory
+  // actually priced. A mismatch here means the UI passed a stale/wrong id;
+  // treat it as a hard error rather than silently substituting the correct
+  // one, so a genuine bug surfaces instead of being masked.
+  if (request.jobId !== jobId) {
+    return { error: "معرّف المهمة لا يطابق طلب الإنتاج." };
+  }
+
+  // No requester-vs-approver check here, deliberately: the submitted PRICE
+  // comes from the factory over an unauthenticated public link (see
+  // production/actions.ts submitFactoryPriceAction), never from a company
+  // user — request.requestedByUserId is only who routed the job TO the
+  // factory, a different thing from who is financially vouching for the
+  // price. A manager approving factory pricing on a job they themselves
+  // sent to production is normal operation, not the self-dealing the
+  // master prompt's section 9 rule targets.
   const now = new Date();
+  let alreadyDecided = false;
   await db.transaction(async (tx) => {
+    // Lock the submission row so a concurrent approve/reject can't also
+    // pass its own pre-check before either commits — then the UPDATE's own
+    // WHERE approvalStatus='pending' is the real, race-safe guard (the
+    // lock alone isn't enough once other sessions can read committed rows
+    // between statements; the conditional UPDATE is what actually decides
+    // the winner).
     await tx
+      .select({ id: factorySubmissions.id })
+      .from(factorySubmissions)
+      .where(eq(factorySubmissions.id, submissionId))
+      .for("update", { of: factorySubmissions });
+
+    const [updated] = await tx
       .update(factorySubmissions)
       .set({ approvalStatus: "approved", approvedByUserId: user!.id, approvedAt: now })
-      .where(eq(factorySubmissions.id, submissionId));
+      .where(
+        and(
+          eq(factorySubmissions.id, submissionId),
+          eq(factorySubmissions.approvalStatus, "pending"),
+        ),
+      )
+      .returning({ id: factorySubmissions.id });
+
+    if (!updated) {
+      alreadyDecided = true;
+      return;
+    }
 
     await tx
       .update(productionRequests)
@@ -66,7 +106,7 @@ export async function approveFactorySubmission(
       .where(eq(productionRequests.id, request.id));
 
     await tx.insert(jobCosts).values({
-      jobId,
+      jobId: request.jobId,
       category: "factory_glass",
       amount: submission.submittedPrice,
       description: submission.notes ?? "تكلفة زجاج المصنع (معتمدة).",
@@ -77,7 +117,7 @@ export async function approveFactorySubmission(
       incurredAt: now.toISOString().slice(0, 10),
     });
 
-    await advanceJobStatus(tx, jobId, "ready_from_factory");
+    await advanceJobStatus(tx, request.jobId, "ready_from_factory");
 
     // Retrofit (Phase 10a, additive-only): mirror this decision onto the
     // matching approval_requests row so the unified approvals queue drops
@@ -113,17 +153,21 @@ export async function approveFactorySubmission(
     );
   });
 
+  if (alreadyDecided) {
+    return { error: "تم اتخاذ قرار بشأن هذا العرض بالفعل." };
+  }
+
   if (request.requestedByUserId && request.requestedByUserId !== user!.id) {
     await notifyUser({
       userId: request.requestedByUserId,
       type: "factory_price_approved",
       title: "تم اعتماد سعر المصنع",
       relatedEntityType: "job",
-      relatedEntityId: jobId,
+      relatedEntityId: request.jobId,
     });
   }
 
-  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath(`/jobs/${request.jobId}`);
   revalidatePath("/production");
   return { success: true };
 }
@@ -159,9 +203,6 @@ export async function rejectFactorySubmission(
     .where(eq(factorySubmissions.id, submissionId))
     .limit(1);
   if (!submission) return { error: "العرض غير موجود." };
-  if (submission.approvalStatus !== "pending") {
-    return { error: "تم اتخاذ قرار بشأن هذا العرض بالفعل." };
-  }
 
   const [request] = await db
     .select()
@@ -170,9 +211,24 @@ export async function rejectFactorySubmission(
     .limit(1);
   if (!request) return { error: "طلب الإنتاج غير موجود." };
 
+  // See the matching comment in approveFactorySubmission: the submission's
+  // own request.jobId is authoritative, never the caller-supplied jobId.
+  if (request.jobId !== jobId) {
+    return { error: "معرّف المهمة لا يطابق طلب الإنتاج." };
+  }
+
+  // No requester-vs-approver check here — see the matching comment in
+  // approveFactorySubmission above.
   const now = new Date();
+  let alreadyDecided = false;
   await db.transaction(async (tx) => {
     await tx
+      .select({ id: factorySubmissions.id })
+      .from(factorySubmissions)
+      .where(eq(factorySubmissions.id, submissionId))
+      .for("update", { of: factorySubmissions });
+
+    const [updated] = await tx
       .update(factorySubmissions)
       .set({
         approvalStatus: "rejected",
@@ -180,7 +236,18 @@ export async function rejectFactorySubmission(
         approvedAt: now,
         rejectionReason: parsed.data.rejectionReason,
       })
-      .where(eq(factorySubmissions.id, submissionId));
+      .where(
+        and(
+          eq(factorySubmissions.id, submissionId),
+          eq(factorySubmissions.approvalStatus, "pending"),
+        ),
+      )
+      .returning({ id: factorySubmissions.id });
+
+    if (!updated) {
+      alreadyDecided = true;
+      return;
+    }
 
     await tx
       .update(productionRequests)
@@ -217,6 +284,10 @@ export async function rejectFactorySubmission(
     );
   });
 
+  if (alreadyDecided) {
+    return { error: "تم اتخاذ قرار بشأن هذا العرض بالفعل." };
+  }
+
   if (request.requestedByUserId && request.requestedByUserId !== user!.id) {
     await notifyUser({
       userId: request.requestedByUserId,
@@ -224,11 +295,11 @@ export async function rejectFactorySubmission(
       title: "تم رفض سعر المصنع",
       body: parsed.data.rejectionReason,
       relatedEntityType: "job",
-      relatedEntityId: jobId,
+      relatedEntityId: request.jobId,
     });
   }
 
-  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath(`/jobs/${request.jobId}`);
   revalidatePath("/production");
   return { success: true };
 }

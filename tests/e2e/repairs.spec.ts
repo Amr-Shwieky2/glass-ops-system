@@ -194,13 +194,24 @@ test.describe("closeJobAction gating", () => {
     );
     expect(jobRows.rows[0].is_terminal).toBe(false);
 
-    // Collect full payment (Mohammad holds APPROVE_PAYMENT -> auto-approved).
+    // Collect full payment as the super admin (Amr) rather than Mohammad:
+    // a regular APPROVE_PAYMENT holder recording their own payment now
+    // lands pending (requester != approver, master prompt section 9) —
+    // only a super admin's explicit override still auto-approves in the
+    // same action, which is what this step needs to move straight on to
+    // testing the close gate itself.
+    await loginAs(page, "amr");
+    await page.goto(job.href, { waitUntil: "networkidle" });
     await page.click('button:has-text("إضافة دفعة")');
     const payDialog = page.locator('[role="dialog"]');
     await payDialog.locator("#amount").fill("400");
     await payDialog.locator('button:has-text("إضافة الدفعة")').click();
     await page.waitForSelector("text=تم تسجيل الدفعة", { timeout: 10_000 });
     await page.waitForTimeout(400);
+
+    // Back to Mohammad for the actual close-gate assertions below.
+    await loginAs(page, "mohammad");
+    await page.goto(job.href, { waitUntil: "networkidle" });
 
     // A second, stale session has this job open too, before the close.
     const staleCtx = await browser.newContext({ locale: "ar" });

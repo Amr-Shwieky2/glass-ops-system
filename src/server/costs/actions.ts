@@ -6,7 +6,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { jobCosts, approvalRequests, users, userPermissions } from "@/server/db/schema";
 import { getCurrentUser } from "@/server/auth/session";
-import { can } from "@/server/auth/permissions";
+import { can, isSuperAdmin, requesterMayApprove } from "@/server/auth/permissions";
 import { PERMISSIONS, type PermissionKey } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
 import { notifyUsers, notifyUser } from "@/server/notifications";
@@ -87,9 +87,13 @@ const AddJobCostSchema = z.object({
  * them (enforced by the zod enum above, not just by convention).
  *
  * Mirrors every other pending/auto-approve pattern in this codebase
- * (recordCustomerPayment, completeInstallationAction): auto-approved when
- * the acting user already holds APPROVE_REQUESTS, otherwise a pending row
- * plus an approval_requests row and a notification to approvers.
+ * (recordCustomerPayment, completeInstallationAction): auto-approved ONLY
+ * for a super admin acting with an explicit, audited override (master
+ * prompt section 9 — requester cannot normally approve their own request,
+ * and holding APPROVE_REQUESTS is not by itself an exception to that).
+ * Everyone else always lands in the pending queue, even if they hold
+ * APPROVE_REQUESTS themselves — a *different* holder of that permission
+ * must decide it.
  */
 export async function addJobCostAction(
   jobId: string,
@@ -119,7 +123,7 @@ export async function addJobCostAction(
     return { error: "المبلغ غير صحيح" };
   }
 
-  const autoApproved = can(user, PERMISSIONS.APPROVE_REQUESTS);
+  const autoApproved = isSuperAdmin(user);
   const now = new Date();
   const incurredAt = parsed.data.incurredAt ?? todayDateString();
 
@@ -158,7 +162,13 @@ export async function addJobCostAction(
         action: "job_cost.create",
         entityType: "job_cost",
         entityId: cost.id,
-        newValue: { jobId, category: parsed.data.category, amount, autoApproved },
+        newValue: {
+          jobId,
+          category: parsed.data.category,
+          amount,
+          autoApproved,
+          ...(autoApproved ? { selfApprovalOverride: true } : {}),
+        },
       },
       tx,
     );
@@ -217,6 +227,11 @@ export async function decideJobCostAction(
     return { error: "تم اتخاذ قرار بشأن هذه التكلفة بالفعل." };
   }
 
+  const selfApproval = requesterMayApprove(user, cost.createdByUserId);
+  if (!selfApproval.allowed) {
+    return { error: "لا يمكنك اعتماد تكلفة سجّلتها بنفسك." };
+  }
+
   const [request] = await db
     .select()
     .from(approvalRequests)
@@ -267,7 +282,10 @@ export async function decideJobCostAction(
         action: "job_cost.decide",
         entityType: "job_cost",
         entityId: costId,
-        newValue: { decision: parsed.data.decision },
+        newValue: {
+          decision: parsed.data.decision,
+          ...(selfApproval.isOverride ? { selfApprovalOverride: true } : {}),
+        },
       },
       tx,
     );

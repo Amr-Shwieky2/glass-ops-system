@@ -6,7 +6,7 @@ import { db } from "@/server/db/client";
 import { approvalRequests, customerPayments } from "@/server/db/schema";
 import type { Database } from "@/server/db/client";
 import { getCurrentUser } from "@/server/auth/session";
-import { can } from "@/server/auth/permissions";
+import { can, requesterMayApprove } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
 import { notifyUser } from "@/server/notifications";
@@ -96,6 +96,18 @@ export async function decideCustomerPaymentAction(
     return { error: "تم اتخاذ قرار بشأن هذه الدفعة بالفعل." };
   }
 
+  // Master prompt section 9: a requester cannot approve their own request.
+  // "Requester" here is whoever created the payment record (falling back
+  // to the receiving technician if it was recorded without a distinct
+  // creator, same fallback the notification below already uses). Only a
+  // super admin may override, and doing so must show up in the audit trail
+  // — never a silent self-approval.
+  const requesterId = payment.createdByUserId ?? payment.receivedByUserId;
+  const selfApproval = requesterMayApprove(user, requesterId);
+  if (!selfApproval.allowed) {
+    return { error: "لا يمكنك اعتماد دفعة سجّلتها بنفسك." };
+  }
+
   const [request] = await db
     .select()
     .from(approvalRequests)
@@ -156,7 +168,10 @@ export async function decideCustomerPaymentAction(
         action: "customer_payment.decide",
         entityType: "customer_payment",
         entityId: paymentId,
-        newValue: { decision: parsed.data.decision },
+        newValue: {
+          decision: parsed.data.decision,
+          ...(selfApproval.isOverride ? { selfApprovalOverride: true } : {}),
+        },
       },
       tx,
     );

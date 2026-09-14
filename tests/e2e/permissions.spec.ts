@@ -3,12 +3,47 @@ import {
   expect,
   DEMO_USERS,
   createLeadJob,
+  drawSignature,
+  moneyPattern,
   uniquePhone,
   uniqueLabel,
   demoUserId,
   grantPermission,
   revokePermission,
 } from "./fixtures";
+
+/**
+ * Signs a quote via its real public link — see the identical helper (and
+ * its full rationale) in financial.spec.ts/production.spec.ts/
+ * repairs.spec.ts. Duplicated locally per this codebase's own convention
+ * for this exact helper rather than centralized in fixtures.ts.
+ */
+async function quoteAndSignQuote(page: import("@playwright/test").Page, price: string) {
+  await page.click('button:has-text("إنشاء عرض سعر")');
+  const dialog = page.locator('[role="dialog"]');
+  await dialog.locator('input[placeholder="الوصف"]').fill("بند اختبار صلاحية السعر");
+  await dialog.locator('input[placeholder="الكمية"]').fill("1");
+  await dialog.locator('input[placeholder="السعر"]').fill(price);
+  await dialog.locator('button:has-text("حفظ عرض السعر")').click();
+  await page.waitForTimeout(700);
+
+  await page.click('button:has-text("إرسال للعميل")');
+  await page.waitForSelector("text=رابط توقيع العرض جاهز", { timeout: 10_000 });
+  const link = await page.locator("input[readonly]").inputValue();
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+
+  const customerCtx = await page.context().browser()!.newContext({ locale: "ar" });
+  const customerPage = await customerCtx.newPage();
+  await customerPage.goto(link, { waitUntil: "networkidle" });
+  await drawSignature(customerPage);
+  await customerPage.check("#agreedToTerms");
+  await customerPage.locator('button:has-text("توقيع والموافقة على العرض")').click();
+  await customerPage.waitForSelector("text=تم توقيع عرض السعر", { timeout: 10_000 });
+  await customerCtx.close();
+
+  await page.reload({ waitUntil: "networkidle" });
+}
 
 /**
  * Spec section 87: permission checks and unauthorized financial access.
@@ -181,6 +216,17 @@ test.describe("unauthorized financial data access", () => {
       await grantPermission(db, mohammadId, "approve_requests");
     }
 
+    // Mohammad himself created this cost — even with approve_requests
+    // restored, he cannot decide his own request (master prompt section 9:
+    // requester != approver). The decision controls must not even appear
+    // for him.
+    await page.goto(job.href, { waitUntil: "networkidle" });
+    const costsCardOwn = page.locator('[data-slot="card"]', { hasText: "التكاليف" });
+    await expect(costsCardOwn.locator('button:has-text("اعتماد")')).toHaveCount(0);
+    await expect(costsCardOwn.locator('button:has-text("رفض")')).toHaveCount(0);
+
+    // A different APPROVE_REQUESTS holder (the super admin) can decide it.
+    await loginAs(page, "amr");
     await page.goto(job.href, { waitUntil: "networkidle" });
     const costsCardRestored = page.locator('[data-slot="card"]', { hasText: "التكاليف" });
     await expect(costsCardRestored.locator('button:has-text("اعتماد")')).toHaveCount(1);
@@ -193,7 +239,94 @@ test.describe("unauthorized financial data access", () => {
       [job.jobId],
     );
     expect(approvedRows[0]?.status).toBe("approved");
-    expect(approvedRows[0]?.approved_by_user_id).toBe(mohammadId);
+    expect(approvedRows[0]?.approved_by_user_id).not.toBe(mohammadId);
+  });
+
+  test("an assigned installer with no VIEW_SALE_PRICE cannot retrieve the sale price — server responses, not just hidden UI", async ({
+    page,
+    loginAs,
+    db,
+  }) => {
+    await loginAs(page, "mohammad");
+    const job = await createLeadJob(page, {
+      customerName: uniqueLabel("عميل سعر بيع"),
+      customerPhone: uniquePhone(),
+      title: "اختبار حجب سعر البيع",
+    });
+    await quoteAndSignQuote(page, "7500");
+
+    await page.click('button:has-text("تعيين فني")');
+    const assignDialog = page.locator('[role="dialog"]');
+    await assignDialog.locator("#userId").click();
+    await page.locator(`[role="option"]:has-text("${DEMO_USERS.basel.name}")`).click();
+    await assignDialog.locator('button:has-text("تعيين"):not(:has-text("فني"))').click();
+    await page.waitForTimeout(500);
+
+    // Collect a partial payment first (1,000 of 7,500) so "remaining"
+    // (6,500 — legitimately visible to a COLLECT_PAYMENT holder like
+    // Basel, a DIFFERENT concern from the agreed sale price itself, see
+    // R1.41) never coincidentally equals the sale-price figure this test
+    // is actually checking for. Mohammad's own payment lands pending
+    // (requester != approver, see the financial.spec.ts test of the same
+    // rule) so Amr approves it as a distinct decider.
+    await page.click('button:has-text("إضافة دفعة")');
+    const payDialog = page.locator('[role="dialog"]');
+    await payDialog.locator("#amount").fill("1000");
+    await payDialog.locator('button:has-text("إضافة الدفعة")').click();
+    await page.waitForSelector("text=تم تسجيل الدفعة", { timeout: 10_000 });
+    await page.waitForTimeout(400);
+
+    await loginAs(page, "amr");
+    await page.goto(job.href, { waitUntil: "networkidle" });
+    await page.click('button:has-text("اعتماد")');
+    await page.locator('[role="alertdialog"]').locator('button:has-text("اعتماد")').click();
+    await page.waitForSelector("text=تم اعتماد الدفعة", { timeout: 10_000 });
+    await page.waitForTimeout(400);
+
+    const { rows: jobRows } = await db.query(
+      `select customer_id from jobs where id = $1`,
+      [job.jobId],
+    );
+    const customerId = jobRows[0].customer_id as string;
+    const { rows: quoteRows } = await db.query(
+      `select id from quotes where job_id = $1 limit 1`,
+      [job.jobId],
+    );
+    const quoteId = quoteRows[0].id as string;
+
+    // Basel (seeded: no VIEW_SALE_PRICE) is now genuinely assigned/involved
+    // in this job — an easy case to get right by accident via a broad
+    // "not involved" check. The real assertion is that the price is gone
+    // from the RAW response body (a Server Component streams its props
+    // straight into the HTML/RSC payload — hiding a value with CSS or a
+    // client-side check would still leak it here), not merely invisible.
+    await loginAs(page, "basel");
+    const jobPageResp = await page.request.get(job.href);
+    expect(jobPageResp.status()).toBe(200);
+    const jobPageBody = await jobPageResp.text();
+    expect(jobPageBody).not.toMatch(moneyPattern("7500.00"));
+    expect(jobPageBody).not.toContain("قيمة البيع الإجمالية");
+
+    // /jobs list: same job, same missing figure, and the column itself
+    // must be gone (not merely an empty cell an attacker could still
+    // infer structure from).
+    const jobsListResp = await page.request.get("/jobs");
+    expect(jobsListResp.status()).toBe(200);
+    const jobsListBody = await jobsListResp.text();
+    expect(jobsListBody).not.toMatch(moneyPattern("7500.00"));
+    expect(jobsListBody).not.toContain("قيمة البيع");
+
+    // The customer page IS reachable (Basel is genuinely involved via this
+    // job's assignment) — but the price on it must still be withheld.
+    const customerPageResp = await page.request.get(`/customers/${customerId}`);
+    expect(customerPageResp.status()).toBe(200);
+    const customerPageBody = await customerPageResp.text();
+    expect(customerPageBody).not.toMatch(moneyPattern("7500.00"));
+
+    // The internal quote PDF is a pricing document — job involvement alone
+    // must not be enough to fetch it.
+    const quotePdfResp = await page.request.get(`/api/quotes/${quoteId}/pdf`);
+    expect(quotePdfResp.status()).toBe(403);
   });
 });
 

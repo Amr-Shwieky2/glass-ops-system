@@ -15,7 +15,7 @@ import {
   userPermissions,
 } from "@/server/db/schema";
 import { getCurrentUser } from "@/server/auth/session";
-import { can } from "@/server/auth/permissions";
+import { can, isSuperAdmin, requesterMayApprove } from "@/server/auth/permissions";
 import { PERMISSIONS, type PermissionKey } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
 import { notifyUser, notifyUsers } from "@/server/notifications";
@@ -516,9 +516,12 @@ export async function recordPenalty(
  * A technician self-reports having received a payment from the company
  * (section 29) — no MANAGE_TECHNICIAN_PAYMENTS required, any logged-in
  * user may report on their own account only (userId is always the current
- * user, never a formData field). Auto-approved if the reporter already
- * holds MANAGE_TECHNICIAN_PAYMENTS themselves; otherwise queued for
- * approval, matching recordCustomerPayment's established pattern.
+ * user, never a formData field). This is a claim about oneself, so per
+ * the master prompt's section 9 rule it can only auto-approve for a super
+ * admin's explicit override — merely holding MANAGE_TECHNICIAN_PAYMENTS is
+ * not an exception, since that would let a manager instantly approve their
+ * own claim of having been paid. Everyone else is queued for approval,
+ * matching recordCustomerPayment's established pattern.
  */
 export async function reportTechnicianPayment(
   _prevState: ActionState,
@@ -531,7 +534,7 @@ export async function reportTechnicianPayment(
   if (amount === null || !isPositive(amount)) return { error: "المبلغ غير صحيح." };
   const note = emptyToUndefined(formData.get("note"));
 
-  const autoApproved = can(user, PERMISSIONS.MANAGE_TECHNICIAN_PAYMENTS);
+  const autoApproved = isSuperAdmin(user);
 
   let ledgerEntryId = "";
   await db.transaction(async (tx) => {
@@ -562,7 +565,11 @@ export async function reportTechnicianPayment(
         action: "technician_ledger_entry.report_payment",
         entityType: "technician_ledger_entry",
         entityId: ledgerEntryId,
-        newValue: { amount, autoApproved },
+        newValue: {
+          amount,
+          autoApproved,
+          ...(autoApproved ? { selfApprovalOverride: true } : {}),
+        },
       },
       tx,
     );
@@ -624,6 +631,11 @@ export async function decideTechnicianLedgerEntry(
     return { error: "تم اتخاذ قرار بشأن هذا القيد بالفعل." };
   }
 
+  const selfApproval = requesterMayApprove(user, entry.createdByUserId);
+  if (!selfApproval.allowed) {
+    return { error: "لا يمكنك اعتماد قيداً أبلغتَ عنه بنفسك." };
+  }
+
   const [request] = await db
     .select()
     .from(approvalRequests)
@@ -683,7 +695,10 @@ export async function decideTechnicianLedgerEntry(
         action: "technician_ledger_entry.decide",
         entityType: "technician_ledger_entry",
         entityId: entryId,
-        newValue: { decision: parsed.data.decision },
+        newValue: {
+          decision: parsed.data.decision,
+          ...(selfApproval.isOverride ? { selfApprovalOverride: true } : {}),
+        },
       },
       tx,
     );

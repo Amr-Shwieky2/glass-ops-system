@@ -1,7 +1,8 @@
 import "server-only";
-import { and, count, desc, eq, ilike, isNull, or } from "drizzle-orm";
+import { and, count, desc, eq, exists, ilike, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { customers, jobs, jobStatuses } from "@/server/db/schema";
+import { involvementFilter } from "@/server/jobs/queries";
 
 export interface CustomerListRow {
   id: string;
@@ -16,8 +17,16 @@ export async function listCustomers(params: {
   search?: string;
   limit?: number;
   offset?: number;
+  /** Set when the viewer only has VIEW_ASSIGNED_JOBS, not VIEW_ALL_JOBS —
+   * mirrors listJobs' own restrictToUserId (src/server/jobs/queries.ts):
+   * a restricted viewer should only ever see customers they have an
+   * actual job relationship with, never the full company directory
+   * (Sprint 1 security hardening — VIEW_CUSTOMERS alone previously let
+   * any authenticated user, including an installer, browse every
+   * customer). */
+  restrictToUserId?: string;
 }): Promise<{ rows: CustomerListRow[]; total: number }> {
-  const { search, limit = 50, offset = 0 } = params;
+  const { search, limit = 50, offset = 0, restrictToUserId } = params;
 
   const conditions = [isNull(customers.deletedAt)];
   const term = search?.trim();
@@ -25,6 +34,22 @@ export async function listCustomers(params: {
     const pattern = `%${term}%`;
     conditions.push(
       or(ilike(customers.name, pattern), ilike(customers.phone, pattern))!,
+    );
+  }
+  if (restrictToUserId) {
+    conditions.push(
+      exists(
+        db
+          .select({ one: sql`1` })
+          .from(jobs)
+          .where(
+            and(
+              eq(jobs.customerId, customers.id),
+              isNull(jobs.deletedAt),
+              involvementFilter(restrictToUserId),
+            ),
+          ),
+      ),
     );
   }
   const where = and(...conditions);
@@ -53,6 +78,31 @@ export async function listCustomers(params: {
   ]);
 
   return { rows, total };
+}
+
+/** Whether `userId` has any job relationship (measured/priced/closed/
+ * assigned) with `customerId` — the customer-page equivalent of
+ * involvementFilter, used to scope /customers/[id] for a viewer without
+ * VIEW_ALL_JOBS the same way /jobs/[id] is already scoped (Sprint 1
+ * security hardening: getCustomerById previously had no ownership
+ * predicate at all, letting any VIEW_CUSTOMERS holder — including an
+ * installer — read any customer's PII, national ID included). */
+export async function isUserInvolvedWithCustomer(
+  customerId: string,
+  userId: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ one: sql`1` })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.customerId, customerId),
+        isNull(jobs.deletedAt),
+        involvementFilter(userId),
+      ),
+    )
+    .limit(1);
+  return !!row;
 }
 
 export async function getCustomerById(id: string) {

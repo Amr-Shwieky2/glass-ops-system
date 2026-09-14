@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect, notFound } from "next/navigation";
 import { Wallet, Banknote } from "lucide-react";
 import { getCurrentUser } from "@/server/auth/session";
-import { can } from "@/server/auth/permissions";
+import { can, isSuperAdmin } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
 import { getUserBasicInfo } from "../../queries";
 import {
@@ -130,6 +130,12 @@ export default async function TechnicianLedgerPage({
 
   const canManage = can(user, PERMISSIONS.MANAGE_TECHNICIAN_PAYMENTS);
   const showManagerQuickActions = canManage && !isOwnPage;
+  // Master prompt section 9: a requester cannot approve their own request.
+  // A pending ledger entry / field-expense report on THIS page always
+  // belongs to `userId` (the technician the page is about) — so viewing
+  // your own page is exactly the self-approval case, unless the viewer is
+  // the super admin override.
+  const canDecideOwnEntries = canManage && (isSuperAdmin(user) || !isOwnPage);
 
   const cashDateFrom = cashFilters.dateFrom ? new Date(`${cashFilters.dateFrom}T00:00:00`) : undefined;
   const cashDateTo = cashFilters.dateTo ? new Date(`${cashFilters.dateTo}T23:59:59.999`) : undefined;
@@ -241,7 +247,7 @@ export default async function TechnicianLedgerPage({
                       {e.description && <p className="text-sm text-muted-foreground">{e.description}</p>}
                     </div>
                   </div>
-                  {e.approvalStatus === "pending" && canManage && (
+                  {e.approvalStatus === "pending" && canDecideOwnEntries && (
                     <LedgerDecisionButtons entryId={e.id} amount={e.amount} />
                   )}
                 </li>
@@ -282,7 +288,7 @@ export default async function TechnicianLedgerPage({
             {isOwnPage && <ReportFieldExpenseDialog />}
           </div>
 
-          {canManage && pendingFieldExpenses.length > 0 && (
+          {canDecideOwnEntries && pendingFieldExpenses.length > 0 && (
             <div className="space-y-2 rounded-md border p-4">
               <p className="text-sm font-medium text-foreground">
                 مصاريف ميدانية بانتظار الاعتماد

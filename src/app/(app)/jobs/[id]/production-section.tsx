@@ -50,14 +50,23 @@ export function ProductionSection({
   jobItems,
   canCreateProductionOrder,
   canApproveFactoryPrice,
+  canViewJobCosts,
 }: {
   jobId: string;
   request: ProductionRequestForJob | null;
   jobItems: JobItemForFactorySummary[];
   canCreateProductionOrder: boolean;
   canApproveFactoryPrice: boolean;
+  /** Sprint 1 (security hardening): the factory-submitted price is a job
+   * cost like any other and must be gated the same way — it was
+   * previously rendered unconditionally to any job viewer, including an
+   * assigned installer with no financial permission at all. Whoever can
+   * decide the price (canApproveFactoryPrice) obviously needs to see it
+   * too, regardless of VIEW_JOB_COSTS. */
+  canViewJobCosts: boolean;
 }) {
   const latest = request?.latestSubmission ?? null;
+  const canViewFactoryPrice = canViewJobCosts || canApproveFactoryPrice;
 
   return (
     <Card>
@@ -105,9 +114,11 @@ export function ProductionSection({
               <div className="space-y-2 rounded-lg border p-3 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="font-medium text-foreground">آخر عرض من المصنع</span>
-                  <span dir="ltr" className="font-bold text-foreground">
-                    {formatILS(latest.submittedPrice)}
-                  </span>
+                  {canViewFactoryPrice && (
+                    <span dir="ltr" className="font-bold text-foreground">
+                      {formatILS(latest.submittedPrice)}
+                    </span>
+                  )}
                 </div>
                 {latest.notes && <p className="text-muted-foreground">{latest.notes}</p>}
                 <p className="text-xs text-muted-foreground">
@@ -147,7 +158,7 @@ export function ProductionSection({
               </div>
             )}
 
-            {request.submissions.length > 1 && (
+            {request.submissions.length > 1 && canViewFactoryPrice && (
               <div className="text-xs text-muted-foreground">
                 محاولات سابقة:{" "}
                 {request.submissions

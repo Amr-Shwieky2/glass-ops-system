@@ -1,6 +1,6 @@
 # Sprint 0 Current-State Report — Glass Operations Management System
 
-Repo: `/Users/shwie/Downloads/glass-ops-system-source` (standalone repo, not a monorepo). Report date: 2026-09-14 (audit ran in two halves across a 5-day gap: 9 of 22 agents Sep 9, resumed and completed Sep 14 — cached results reused for anything unchanged). Companion document: `requirements-matrix.md` (same directory) — this report's "Requirement coverage counts" and "Remaining gaps" sections summarize that matrix; see it for row-by-row evidence.
+Repo: `/Users/shwie/Downloads/glass-ops-system-source` (standalone repo, not a monorepo). Report date: 2026-09-14 (audit ran in two halves across a 5-day gap: 9 of 22 agents Sep 9, resumed and completed Sep 14 — cached results reused for anything unchanged). Companion document: `requirements-matrix.md` (same directory) — this report's "Requirement coverage counts" and "Remaining gaps" sections summarize that matrix; see it for row-by-row evidence. **Sprint 1 (security hardening) landed the same day — see `requirements-matrix.md`'s "Sprint 1 changelog" section at the top for what changed; everything below this line is the unedited Sprint 0 snapshot.**
 
 ## Framework / stack
 

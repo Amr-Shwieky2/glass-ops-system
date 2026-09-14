@@ -63,7 +63,16 @@ export default async function RepairsPage({
       ? (params.status as RepairListRow["status"])
       : undefined;
 
-  const rows = await getRepairsList(status ? { status } : undefined);
+  // Sprint 1 security hardening: a VIEW_ASSIGNED_JOBS-only viewer must
+  // only see repairs on jobs they're involved in (or are themselves the
+  // responsible person for) — previously this page showed every company
+  // repair to any CREATE_REPAIR holder, live-demonstrated against a
+  // 7-permission installer account during the Sprint 0 audit.
+  const canViewAll = can(user, PERMISSIONS.VIEW_ALL_JOBS);
+  const rows = await getRepairsList({
+    ...(status ? { status } : {}),
+    ...(canViewAll ? {} : { restrictToUserId: user!.id }),
+  });
 
   return (
     <div className="space-y-6">

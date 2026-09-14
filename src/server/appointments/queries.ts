@@ -375,3 +375,26 @@ export async function getAssigneeConflicts(params: {
   }
   return Array.from(conflictNames);
 }
+
+/** Whether `userId` is one of `appointmentId`'s assignees — the ownership
+ * check every technician-facing appointment action (arrive/complete/note)
+ * must pass before acting on it, so admins with a scheduling permission
+ * can still act on someone else's appointment but a random technician
+ * cannot act on someone else's (see completeInstallationAction /
+ * markAppointmentArrivedAction). */
+export async function isAppointmentAssignee(
+  appointmentId: string,
+  userId: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ userId: appointmentAssignees.userId })
+    .from(appointmentAssignees)
+    .where(
+      and(
+        eq(appointmentAssignees.appointmentId, appointmentId),
+        eq(appointmentAssignees.userId, userId),
+      ),
+    )
+    .limit(1);
+  return !!row;
+}

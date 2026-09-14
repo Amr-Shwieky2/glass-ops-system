@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/server/db/client";
@@ -8,6 +9,7 @@ import { users } from "@/server/db/schema";
 import { verifyPassword } from "@/server/auth/password";
 import { normalizePhone } from "@/server/tokens";
 import { createSession } from "@/server/auth/session";
+import { checkRateLimit, isBlocked } from "@/server/security/rate-limit";
 
 export interface LoginFormState {
   error?: string;
@@ -25,6 +27,28 @@ const LoginSchema = z.object({
 const GENERIC_ERROR = "رقم الهاتف أو كلمة المرور غير صحيحة.";
 const SUSPENDED_ERROR = "تم تعليق هذا الحساب. يرجى التواصل مع الإدارة.";
 const UNEXPECTED_ERROR = "حدث خطأ غير متوقع. حاول مرة أخرى.";
+const TOO_MANY_ATTEMPTS_ERROR = "محاولات كثيرة جداً. حاول مرة أخرى بعد قليل.";
+
+// Two independent limits, both must pass: per-phone (protects one account
+// regardless of which IP the guesses come from — the more important of
+// the two, since X-Forwarded-For is spoofable, see below) and per-IP
+// (slows down guessing spread across many phone numbers from one source).
+// 5 failures / 15 minutes, then blocked for 15 minutes — generous enough
+// for a real person mistyping a password, tight enough to make brute
+// force impractical. Deliberately counts only FAILED attempts (wrong
+// password / unknown phone), never successes: a busy, entirely legitimate
+// login volume (many people signing in through one office connection,
+// which collapses to one IP bucket whenever no reverse proxy sets
+// X-Forwarded-For — true of this app's own local/dev setup) must never
+// itself trip the limiter.
+const PHONE_LIMIT = { maxAttempts: 5, windowMs: 15 * 60_000, blockMs: 15 * 60_000 };
+const IP_LIMIT = { maxAttempts: 20, windowMs: 15 * 60_000, blockMs: 15 * 60_000 };
+
+async function clientIp(): Promise<string> {
+  const headersList = await headers();
+  const forwardedFor = headersList.get("x-forwarded-for");
+  return forwardedFor?.split(",")[0]?.trim() || "unknown";
+}
 
 function safeRedirectTarget(raw: FormDataEntryValue | null): string {
   if (
@@ -52,6 +76,15 @@ export async function loginAction(
 
   const normalizedPhone = normalizePhone(parsed.data.phone);
   const target = safeRedirectTarget(formData.get("redirect"));
+  const ip = await clientIp();
+  const phoneKey = `login:phone:${normalizedPhone}`;
+  const ipKey = `login:ip:${ip}`;
+
+  // Read-only pre-check — does not itself count as an attempt, so it can
+  // never accumulate from being called on every request.
+  if (!isBlocked(phoneKey).allowed || !isBlocked(ipKey).allowed) {
+    return { error: TOO_MANY_ATTEMPTS_ERROR };
+  }
 
   let userId: string;
 
@@ -69,6 +102,8 @@ export async function loginAction(
 
     const row = rows[0];
     if (!row || row.deletedAt) {
+      checkRateLimit(phoneKey, PHONE_LIMIT);
+      checkRateLimit(ipKey, IP_LIMIT);
       return { error: GENERIC_ERROR };
     }
 
@@ -77,6 +112,8 @@ export async function loginAction(
       row.passwordHash,
     );
     if (!passwordOk) {
+      checkRateLimit(phoneKey, PHONE_LIMIT);
+      checkRateLimit(ipKey, IP_LIMIT);
       return { error: GENERIC_ERROR };
     }
 

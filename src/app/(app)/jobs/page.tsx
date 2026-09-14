@@ -38,6 +38,7 @@ export default async function JobsPage({
     return <Forbidden />;
   }
   const canViewAll = can(user, PERMISSIONS.VIEW_ALL_JOBS);
+  const canViewSalePrice = can(user, PERMISSIONS.VIEW_SALE_PRICE);
   const page = Math.max(1, Number(params.page) || 1);
 
   const [{ rows, total }, statuses] = await Promise.all([
@@ -103,7 +104,7 @@ export default async function JobsPage({
                   <TableHead>رقم المهمة</TableHead>
                   <TableHead>العميل</TableHead>
                   <TableHead>الحالة</TableHead>
-                  <TableHead>قيمة البيع</TableHead>
+                  {canViewSalePrice && <TableHead>قيمة البيع</TableHead>}
                   <TableHead>تاريخ الإنشاء</TableHead>
                 </TableRow>
               </TableHeader>
@@ -133,9 +134,11 @@ export default async function JobsPage({
                         {job.statusLabelAr}
                       </Badge>
                     </TableCell>
-                    <TableCell dir="ltr" className="text-end text-muted-foreground">
-                      {job.salePriceTotal ? formatILS(job.salePriceTotal) : "—"}
-                    </TableCell>
+                    {canViewSalePrice && (
+                      <TableCell dir="ltr" className="text-end text-muted-foreground">
+                        {job.salePriceTotal ? formatILS(job.salePriceTotal) : "—"}
+                      </TableCell>
+                    )}
                     <TableCell className="text-muted-foreground">
                       {new Intl.DateTimeFormat("ar", {
                         year: "numeric",

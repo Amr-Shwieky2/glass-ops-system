@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/server/auth/session";
 import { can } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
 import { listCustomers } from "@/server/customers/queries";
+import { Forbidden } from "@/components/forbidden";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -31,12 +32,23 @@ export default async function CustomersPage({
 }) {
   const params = await searchParams;
   const user = await getCurrentUser();
+  if (!can(user, PERMISSIONS.VIEW_CUSTOMERS)) {
+    return <Forbidden />;
+  }
   const canCreate = can(user, PERMISSIONS.CREATE_CUSTOMER);
+  // A restricted viewer (no VIEW_ALL_JOBS, no CREATE_CUSTOMER) sees only
+  // customers they have an actual job relationship with — see
+  // listCustomers' own comment. CREATE_CUSTOMER holders are exempted: a
+  // brand-new customer with no job yet would otherwise be invisible even
+  // to the person who just created them, and finding/avoiding duplicate
+  // customers is inherent to that permission's job.
+  const canBrowseAll = can(user, PERMISSIONS.VIEW_ALL_JOBS) || canCreate;
   const page = Math.max(1, Number(params.page) || 1);
   const { rows, total } = await listCustomers({
     search: params.q,
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
+    restrictToUserId: canBrowseAll ? undefined : user!.id,
   });
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 

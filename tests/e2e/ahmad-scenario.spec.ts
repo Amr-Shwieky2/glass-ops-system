@@ -204,9 +204,15 @@ test.describe("Ahmad end-to-end scenario (spec section 72)", () => {
     expect(afterConvert[0].deal_closed_by_user_id).toBe(mohammadId);
 
     // -----------------------------------------------------------------
-    // 4. Mohammad records a 3,000 cash deposit — he holds APPROVE_PAYMENT
-    // himself, so it's auto-approved and credits his own cash box
-    // immediately (recordCustomerPayment's documented design).
+    // 4. Mohammad records a 3,000 cash deposit. Even though he holds
+    // APPROVE_PAYMENT, it lands PENDING — a requester cannot approve their
+    // own request (master prompt section 9); only a super admin's
+    // explicit override auto-approves in the same action, and Mohammad is
+    // a regular manager, not the seeded super admin. Amr (the super
+    // admin) then approves it as a distinct decider — the cash still
+    // credits Mohammad's OWN account once approved, since crediting always
+    // follows the payment's receivedByUserId (whoever physically holds the
+    // cash), never the approver.
     // -----------------------------------------------------------------
     const mohammadCash = await cashAccountId(db, "user", mohammadId);
     const mohammadCashBeforeDeposit = await cashBalance(db, mohammadCash);
@@ -218,10 +224,25 @@ test.describe("Ahmad end-to-end scenario (spec section 72)", () => {
     await page.waitForSelector("text=تم تسجيل الدفعة", { timeout: 10_000 });
     await page.waitForTimeout(400);
     text = await page.innerText("body");
+    expect(text).toContain("بانتظار الاعتماد"); // pending — Mohammad requested it himself
+    expect(moneyPattern("12000.00").test(text)).toBe(true); // remaining unchanged, still pending
+    expect(await cashBalance(db, mohammadCash)).toBe(mohammadCashBeforeDeposit); // no credit yet
+
+    await loginAs(page, "amr");
+    await page.goto(job.href, { waitUntil: "networkidle" });
+    await page.click('button:has-text("اعتماد")');
+    await page.locator('[role="alertdialog"]').locator('button:has-text("اعتماد")').click();
+    await page.waitForSelector("text=تم اعتماد الدفعة", { timeout: 10_000 });
+    await page.waitForTimeout(400);
+    text = await page.innerText("body");
     expect(text).not.toContain("بانتظار الاعتماد");
     expect(moneyPattern("3000.00").test(text)).toBe(true); // collected
     expect(moneyPattern("9000.00").test(text)).toBe(true); // remaining = 12,000 - 3,000
     expect((await cashBalance(db, mohammadCash)) - mohammadCashBeforeDeposit).toBe(3000);
+
+    // Back to Mohammad for the rest of the scenario.
+    await loginAs(page, "mohammad");
+    await page.goto(job.href, { waitUntil: "networkidle" });
 
     // -----------------------------------------------------------------
     // 5. The production request already exists — auto-created by the same
@@ -412,8 +433,11 @@ test.describe("Ahmad end-to-end scenario (spec section 72)", () => {
     ).toBe(true);
 
     // -----------------------------------------------------------------
-    // 11. Hardware cost 1,000 (Mohammad holds APPROVE_REQUESTS himself ->
-    // auto-approved) -> job costs total 5,900 = 3,200 + 1,000 + 1,700.
+    // 11. Hardware cost 1,000. Mohammad holds APPROVE_REQUESTS but is not
+    // the super admin, so recording it lands PENDING (requester != approver,
+    // master prompt section 9) rather than auto-approving. Amr, a distinct
+    // APPROVE_REQUESTS holder, decides it -> job costs total
+    // 5,900 = 3,200 + 1,000 + 1,700.
     // -----------------------------------------------------------------
     const costsCard = page.locator('[data-slot="card"]', { hasText: "التكاليف" });
     await costsCard.locator('button:has-text("إضافة تكلفة")').click();
@@ -424,6 +448,20 @@ test.describe("Ahmad end-to-end scenario (spec section 72)", () => {
     await page.waitForSelector("text=تم تسجيل التكلفة", { timeout: 10_000 });
     await page.waitForTimeout(400);
 
+    const { rows: pendingCostRows } = await db.query(
+      `select coalesce(sum(amount), 0)::text as total from job_costs where job_id = $1 and status = 'approved'`,
+      [job.jobId],
+    );
+    expect(Number(pendingCostRows[0].total)).toBe(4900); // 3,200 + 1,700 — the new 1,000 not yet approved
+
+    await loginAs(page, "amr");
+    await page.goto(job.href, { waitUntil: "networkidle" });
+    const costsCardAsAmr = page.locator('[data-slot="card"]', { hasText: "التكاليف" });
+    await costsCardAsAmr.locator('button:has-text("اعتماد")').first().click();
+    await page.locator('[role="alertdialog"]').locator('button:has-text("اعتماد")').click();
+    await page.waitForSelector("text=تم اعتماد التكلفة", { timeout: 10_000 });
+    await page.waitForTimeout(400);
+
     const { rows: totalRows } = await db.query(
       `select coalesce(sum(amount), 0)::text as total from job_costs where job_id = $1 and status = 'approved'`,
       [job.jobId],
@@ -432,6 +470,10 @@ test.describe("Ahmad end-to-end scenario (spec section 72)", () => {
     await page.reload({ waitUntil: "networkidle" });
     text = await page.innerText("body");
     expect(moneyPattern("5900.00").test(text)).toBe(true);
+
+    // Back to Mohammad for the rest of the scenario.
+    await loginAs(page, "mohammad");
+    await page.goto(job.href, { waitUntil: "networkidle" });
 
     // -----------------------------------------------------------------
     // 12. Gross profit 6,100 = 12,000 - 5,900 -> Mohammad's commission
@@ -495,7 +537,9 @@ test.describe("Ahmad end-to-end scenario (spec section 72)", () => {
 
     // -----------------------------------------------------------------
     // 14. The remaining 4,000 collected -> repair resolved -> job closed,
-    // status Completed, remaining ₪0.00 (fully paid).
+    // status Completed, remaining ₪0.00 (fully paid). Mohammad's own
+    // payment again lands pending (section 9's requester != approver
+    // rule) and Amr, a distinct approver, decides it.
     // -----------------------------------------------------------------
     await page.click('button:has-text("إضافة دفعة")');
     dialog = page.locator('[role="dialog"]');
@@ -503,9 +547,20 @@ test.describe("Ahmad end-to-end scenario (spec section 72)", () => {
     await dialog.locator('button:has-text("إضافة الدفعة")').click();
     await page.waitForSelector("text=تم تسجيل الدفعة", { timeout: 10_000 });
     await page.waitForTimeout(400);
+
+    await loginAs(page, "amr");
+    await page.goto(job.href, { waitUntil: "networkidle" });
+    await page.click('button:has-text("اعتماد")');
+    await page.locator('[role="alertdialog"]').locator('button:has-text("اعتماد")').click();
+    await page.waitForSelector("text=تم اعتماد الدفعة", { timeout: 10_000 });
+    await page.waitForTimeout(400);
     text = await page.innerText("body");
     expect(moneyPattern("12000.00").test(text)).toBe(true); // fully collected
     expect(await jobRemainingBalance(db, job.jobId)).toBe(0); // recomputed to zero, not stored
+
+    // Back to Mohammad for the close-out steps below.
+    await loginAs(page, "mohammad");
+    await page.goto(job.href, { waitUntil: "networkidle" });
 
     const repairsCard = page.locator('[data-slot="card"]', { hasText: "الإصلاحات" });
     const repairRow = repairsCard.locator("li", { hasText: repairLabel });

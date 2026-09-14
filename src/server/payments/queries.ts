@@ -16,6 +16,7 @@ export interface JobPayment {
   approvalStatus: string;
   notes: string | null;
   receivedByUserName: string;
+  createdByUserId: string | null;
   createdByUserName: string | null;
   createdAt: Date;
 }
@@ -45,6 +46,7 @@ export async function getJobPayments(jobId: string): Promise<JobPaymentsResult> 
         approvalStatus: customerPayments.approvalStatus,
         notes: customerPayments.notes,
         receivedByUserName: receivedByUser.name,
+        createdByUserId: customerPayments.createdByUserId,
         createdByUserName: createdByUser.name,
         createdAt: customerPayments.createdAt,
       })

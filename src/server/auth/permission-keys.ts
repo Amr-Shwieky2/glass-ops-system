@@ -69,6 +69,17 @@ export const PERMISSIONS = {
   // external_contractor / aluminum_contractor / other costs had no entry
   // path at all until this key.
   MANAGE_JOB_COSTS: "manage_job_costs",
+
+  // Sprint 1 (security hardening) addition: the agreed sale price was
+  // rendered on the job page/list, the customer page, and the quote PDF to
+  // ANY viewer of the job — including an assigned installer holding no
+  // financial permission at all. The base spec names sale price explicitly
+  // among the fields that must stay protected front and back (section 65),
+  // but never named a specific key for it. VIEW_PROFITABILITY is about
+  // margin/cost, a strictly higher bar than "can this person, who is
+  // legitimately quoting/closing/installing this job, see the agreed
+  // price" — so this is its own key, not a reuse of VIEW_PROFITABILITY.
+  VIEW_SALE_PRICE: "view_sale_price",
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -108,6 +119,7 @@ export const PERMISSION_CATALOGUE: PermissionSeed[] = [
 
   { key: PERMISSIONS.CREATE_REPAIR, label: "فتح إصلاح", description: "فتح طلب إصلاح (تيكون) على مهمة.", category: "الإصلاحات" },
 
+  { key: PERMISSIONS.VIEW_SALE_PRICE, label: "عرض سعر البيع", description: "الاطلاع على السعر المتفق عليه مع العميل في المهمة وعرض السعر.", category: "الرؤية المالية" },
   { key: PERMISSIONS.VIEW_PROFITABILITY, label: "عرض الربحية", description: "الاطلاع على أرقام الإيراد والتكلفة وهامش الربح.", category: "الرؤية المالية" },
   { key: PERMISSIONS.VIEW_JOB_COSTS, label: "عرض تكاليف المهمة", description: "الاطلاع على سجل تكاليف المهمة.", category: "الرؤية المالية" },
   { key: PERMISSIONS.MANAGE_JOB_COSTS, label: "إدارة تكاليف المهمة", description: "تسجيل تكاليف مواد/مقاولين/تكاليف أخرى على المهمة.", category: "الرؤية المالية" },

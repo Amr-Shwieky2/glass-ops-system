@@ -5,13 +5,14 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { appointments, jobItems, jobs } from "@/server/db/schema";
 import { getCurrentUser } from "@/server/auth/session";
-import { can } from "@/server/auth/permissions";
+import { can, canAny, isSuperAdmin } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
 import { notifyUsers } from "@/server/notifications";
 import { advanceJobStatus } from "@/server/jobs/status";
 import { parseNonNegativeMoneyInput, isPositive } from "@/server/money";
 import { recordCustomerPayment, getUserIdsWithPermission } from "@/server/payments/record";
+import { isAppointmentAssignee } from "@/server/appointments/queries";
 
 export interface ActionState {
   error?: string;
@@ -46,6 +47,18 @@ export async function completeInstallationAction(params: {
     .where(eq(appointments.id, params.appointmentId))
     .limit(1);
   if (!appointment) return { error: "الموعد غير موجود." };
+
+  // Ownership check (see isAppointmentAssignee's doc comment): a technician
+  // can only complete an appointment assigned to them; an admin/dispatcher
+  // holding ASSIGN_INSTALLER or VIEW_ALL_JOBS can complete on anyone's
+  // behalf. Without this, any COMPLETE_INSTALLATION holder could complete
+  // an arbitrary appointment on an arbitrary job just by guessing/reusing
+  // an appointment id.
+  const isAssignee = await isAppointmentAssignee(params.appointmentId, user!.id);
+  if (!isAssignee && !canAny(user, [PERMISSIONS.ASSIGN_INSTALLER, PERMISSIONS.VIEW_ALL_JOBS])) {
+    return { error: "هذا الموعد غير مُسند إليك." };
+  }
+
   // A technician may complete the installation directly from 'scheduled'
   // (arrival tracking is optional), or after marking 'arrived' via
   // markAppointmentArrivedAction — either is a valid pre-completion state.
@@ -63,6 +76,9 @@ export async function completeInstallationAction(params: {
 
   let paymentAmount: string | null = null;
   if (params.paymentCollected) {
+    if (!can(user, PERMISSIONS.COLLECT_PAYMENT)) {
+      return { error: "لا تملك صلاحية تحصيل الدفعات." };
+    }
     if (!params.paymentMethod) return { error: "طريقة الدفع مطلوبة." };
     paymentAmount = parseNonNegativeMoneyInput(params.paymentAmount);
     if (paymentAmount === null || !isPositive(paymentAmount)) {
@@ -96,10 +112,14 @@ export async function completeInstallationAction(params: {
     }
 
     if (params.jobItemIds.length > 0) {
+      // eq(jobItems.jobId, job.id) is load-bearing, not redundant: without
+      // it, a caller could pass job-item ids belonging to an UNRELATED job
+      // and silently mark them installed. Ids that don't belong to this
+      // job are simply not matched, rather than rejected outright.
       await tx
         .update(jobItems)
         .set({ status: "installed", updatedAt: new Date() })
-        .where(inArray(jobItems.id, params.jobItemIds));
+        .where(and(inArray(jobItems.id, params.jobItemIds), eq(jobItems.jobId, job.id)));
     }
 
     if (params.paymentCollected && paymentAmount) {
@@ -111,7 +131,7 @@ export async function completeInstallationAction(params: {
         receivedByUserId: user!.id,
         notes: params.note,
         actingUserId: user!.id,
-        actingUserCanApprove: can(user, PERMISSIONS.APPROVE_PAYMENT),
+        actingUserIsSuperAdmin: isSuperAdmin(user),
       });
       autoApprovedPayment = autoApproved;
     }

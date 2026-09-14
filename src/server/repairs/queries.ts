@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, or } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { repairs, jobs, customers, users } from "@/server/db/schema";
 import { involvementFilter } from "@/server/jobs/queries";
@@ -48,6 +48,16 @@ const repairListSelection = {
   responsibleUserName: users.name,
 };
 
+/** A restricted viewer sees a repair if they're involved in its job
+ * (measured/priced/closed/assigned) OR are the repair's own responsible
+ * person — the latter was previously missing everywhere this file scopes
+ * by user (Sprint 1 fix: a technician set as a repair's sole responsible
+ * person could not see it on their own dashboard, since involvementFilter
+ * alone only looks at the parent job, not the repair row itself). */
+function repairVisibilityFilter(restrictToUserId: string) {
+  return or(involvementFilter(restrictToUserId), eq(repairs.responsibleUserId, restrictToUserId))!;
+}
+
 function repairListBaseQuery() {
   return db
     .select(repairListSelection)
@@ -60,14 +70,23 @@ function repairListBaseQuery() {
 /**
  * Every repair (across all jobs), newest dateReported first, with job
  * number + customer name joined — backs the standalone /repairs list page.
+ * `restrictToUserId` (Sprint 1 security hardening): a VIEW_ASSIGNED_JOBS-
+ * only viewer used to see every company repair here regardless of
+ * involvement — live-demonstrated during the Sprint 0 audit against a
+ * 7-permission installer account. Pass it whenever the caller lacks
+ * VIEW_ALL_JOBS, same convention as listJobs/listCustomers.
  */
 export async function getRepairsList(filters?: {
   status?: "open" | "scheduled" | "in_progress" | "resolved";
+  restrictToUserId?: string;
 }): Promise<RepairListRow[]> {
-  const query = repairListBaseQuery();
-  const rows = await (filters?.status
-    ? query.where(eq(repairs.status, filters.status))
-    : query
+  const conditions = [
+    ...(filters?.status ? [eq(repairs.status, filters.status)] : []),
+    ...(filters?.restrictToUserId ? [repairVisibilityFilter(filters.restrictToUserId)] : []),
+  ];
+  const rows = await (conditions.length > 0
+    ? repairListBaseQuery().where(and(...conditions))
+    : repairListBaseQuery()
   ).orderBy(desc(repairs.dateReported), desc(repairs.createdAt));
   return rows;
 }
@@ -111,7 +130,7 @@ export async function getOpenRepairsCount(restrictToUserId?: string): Promise<nu
     .where(
       and(
         inArray(repairs.status, UNRESOLVED_REPAIR_STATUSES),
-        ...(restrictToUserId ? [involvementFilter(restrictToUserId)!] : []),
+        ...(restrictToUserId ? [repairVisibilityFilter(restrictToUserId)] : []),
       ),
     );
   return rows.length;
@@ -125,7 +144,7 @@ export async function getOpenRepairs(restrictToUserId?: string): Promise<RepairL
     .where(
       and(
         inArray(repairs.status, UNRESOLVED_REPAIR_STATUSES),
-        ...(restrictToUserId ? [involvementFilter(restrictToUserId)!] : []),
+        ...(restrictToUserId ? [repairVisibilityFilter(restrictToUserId)] : []),
       ),
     )
     .orderBy(desc(repairs.dateReported), desc(repairs.createdAt));

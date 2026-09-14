@@ -1,5 +1,32 @@
 # Sprint 0 Requirements Matrix — Glass Operations Management System
 
+## Sprint 1 changelog (2026-09-14) — security & authorization hardening
+
+The rows below this line are the **Sprint 0 snapshot**, unedited — kept as the historical baseline. The items listed here were fixed in Sprint 1; their Sprint-0 row is now stale on these specific points. Full detail in the Sprint 1 report delivered to the user; summary:
+
+**Fixed and verified (30/30 E2E, 127/127 unit, lint/typecheck/build clean):**
+- New `VIEW_SALE_PRICE` permission (granted to Amr/Mohammad/Issam, not Basel); sale price now gated on the job page (header, items card, per-item, `QuoteSection`'s line items/total), jobs list, customer page, and the internal quote PDF route. Closes I6, P4 (sale-price half), R1.41, S1.4, S1.5, T4, RG13.
+- `ProductionSection`'s factory-price render now gated behind `VIEW_JOB_COSTS`/`APPROVE_FACTORY_PRICE`. Closes R1.10.
+- `/customers` list: added the missing `VIEW_CUSTOMERS` gate; both it and `/customers/[id]` now scope to job-involvement (or `VIEW_ALL_JOBS`/`CREATE_CUSTOMER`) for a restricted viewer — the live-demonstrated national-ID leak is closed. Closes S1.1, R1.15.
+- `/repairs` list scoped the same way (plus a `responsibleUserId` fix so a technician sees repairs they're personally responsible for). Closes R1.32, and the R1.35 dashboard sub-gap.
+- `completeInstallationAction`: added assignee-ownership check, a `COLLECT_PAYMENT` check before recording a payment, and a `job_id` filter on the job-items update. Closes CRITICAL finding #1.
+- `approveFactorySubmission`/`rejectFactorySubmission`: now derive `jobId` from the submission's own request (mismatch is a hard error) and lock the submission row before the conditional approve/reject update. Closes CRITICAL finding #3, downgrades R1.29 back toward IMPLEMENTED.
+- `createMeasurement`: added a job-visibility check before trusting the caller-supplied `jobId` — closes the self-grant-visibility hole. Partial progress on S1.2 (other listed actions in S1.2/S1.3 are NOT yet fixed — see below).
+- `cancelAppointmentAction`: derives the real job from the appointment row, adds an assignee-or-scheduling-permission check, and a race-safe conditional status update.
+- Login: added a rate limiter (`src/server/security/rate-limit.ts`), keyed by phone and by IP, counting only failed attempts. Public quote-PDF/signing and factory-submission endpoints also rate-limited. Closes S1.7 (rate-limiting half of S1.8).
+- Self-approval prevention (master prompt section 9): new `isSuperAdmin`/`requesterMayApprove` helpers; wired into customer-payment decide, job-cost create+decide, technician self-reported-payment create+decide, field-expense decide, and cash-transfer confirm — plus the matching UI decision buttons now hide for the requester (not just server-side rejection). Deliberately NOT applied to factory-submission approve/reject (the submitted price comes from an unauthenticated external factory, not a company requester — see the code comment in `production/approve.ts`). Closes V1, V2, S1.6.
+- New regression test (`permissions.spec.ts`, "an assigned installer with no VIEW_SALE_PRICE cannot retrieve the sale price") asserting on raw HTTP response bodies, not rendered UI — it caught the `QuoteSection` leak above before this changelog was written. Progress on S1.9 (not yet exhaustive — no test yet for the customer-PII fix or the repairs-list fix).
+
+**Explicitly NOT done in Sprint 1 (real, tracked gaps — do not treat as fixed):**
+- S1.2/S1.3: `scheduleAppointmentAction`, `addPaymentAction`, `cancelJob`, `closeJobAction`, `sendQuoteAction`, `deleteJobItem`, `removeAssignment`, `convertQuoteToJob` still trust a caller-supplied `jobId`/child-id without an ownership/visibility check.
+- S1.8: factory links still never expire and have no revoke action (columns exist, unused) — only the rate-limiting half of S1.8 was addressed.
+- D5: `.env.example` still not tracked in git (deliberately deferred to whichever sprint touches deployment docs — out of Sprint 1's scope, not forgotten).
+- No test yet directly targets the self-approval-prevention behavior at the HTTP/DB level (S1.9's "no test proves self-approval prevented" gap) beyond the e2e tests that were updated to exercise the new pending-then-different-approver flow as a side effect.
+
+---
+
+# Sprint 0 Requirements Matrix — Glass Operations Management System
+
 Synthesized from 9 domain verifiers, 9 domain skeptic refuters, 2 live HTTP probe sessions, and one live Playwright E2E run (this session, 2026-09-14). Two checklist files referenced by the task brief (`requirements-checklist.md`, `sprint0-checklist.md`) and a prior `coverage-synthesis.md` were **not present** in the scratchpad at synthesis time (confirmed absent by two independent domain agents after repeated `find`/`ls` passes). Item wording below is reconstructed from each verifier's own quoted requirement text; item **statuses and evidence are unaffected** by the missing files since every verifier independently re-derived requirement intent from source and live testing.
 
 ## (a) Status vocabulary and evidence rules

@@ -42,12 +42,16 @@ export function PaymentsSection({
   paymentsResult,
   canCollectPayment,
   canApprovePayment,
+  currentUserId,
+  isSuperAdminUser,
 }: {
   jobId: string;
   hasSalePrice: boolean;
   paymentsResult: JobPaymentsResult;
   canCollectPayment: boolean;
   canApprovePayment: boolean;
+  currentUserId: string;
+  isSuperAdminUser: boolean;
 }) {
   const { payments, totalApproved, remaining } = paymentsResult;
 
@@ -107,7 +111,9 @@ export function PaymentsSection({
                     {p.notes && <p className="text-sm text-muted-foreground">{p.notes}</p>}
                   </div>
                 </div>
-                {p.approvalStatus === "pending" && canApprovePayment && (
+                {p.approvalStatus === "pending" &&
+                  canApprovePayment &&
+                  (isSuperAdminUser || p.createdByUserId !== currentUserId) && (
                   <PaymentDecisionButtons paymentId={p.id} amount={p.amount} />
                 )}
               </li>

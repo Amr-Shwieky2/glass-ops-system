@@ -7,7 +7,7 @@ import { db } from "@/server/db/client";
 import { cashAccounts, cashTransactions, cashTransfers, users, userPermissions } from "@/server/db/schema";
 import type { Database } from "@/server/db/client";
 import { getCurrentUser } from "@/server/auth/session";
-import { can } from "@/server/auth/permissions";
+import { can, requesterMayApprove } from "@/server/auth/permissions";
 import { PERMISSIONS, type PermissionKey } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
 import { notifyUsers, notifyUser } from "@/server/notifications";
@@ -167,6 +167,14 @@ export async function confirmCashTransfer(transferId: string): Promise<ActionSta
     return { error: "تم تأكيد هذه العملية بالفعل." };
   }
 
+  // The person handing over cash confirming their own handover would be
+  // self-attesting receipt with no independent check — the same self-
+  // dealing risk the master prompt's section 9 rule targets elsewhere.
+  const selfApproval = requesterMayApprove(user, transfer.createdByUserId);
+  if (!selfApproval.allowed) {
+    return { error: "لا يمكنك تأكيد تسليم نقدية قمتَ بتسليمها بنفسك." };
+  }
+
   const now = new Date();
   let alreadyConfirmed = false;
 
@@ -207,7 +215,10 @@ export async function confirmCashTransfer(transferId: string): Promise<ActionSta
         action: "cash_transfer.confirm",
         entityType: "cash_transfer",
         entityId: transfer.id,
-        newValue: { amount: transfer.amount },
+        newValue: {
+          amount: transfer.amount,
+          ...(selfApproval.isOverride ? { selfApprovalOverride: true } : {}),
+        },
       },
       tx,
     );
