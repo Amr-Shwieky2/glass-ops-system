@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/server/db/client";
-import { jobCosts, approvalRequests, users, userPermissions } from "@/server/db/schema";
+import { jobCosts, jobItems, approvalRequests, users, userPermissions } from "@/server/db/schema";
 import { getCurrentUser } from "@/server/auth/session";
 import { can, isSuperAdmin, requesterMayApprove } from "@/server/auth/permissions";
 import { PERMISSIONS, type PermissionKey } from "@/server/auth/permission-keys";
@@ -13,6 +13,7 @@ import { notifyUsers, notifyUser } from "@/server/notifications";
 import { parseNonNegativeMoneyInput, isPositive, formatILS } from "@/server/money";
 import { createApprovalRequest } from "@/server/approvals/decide";
 import { MANUAL_JOB_COST_CATEGORIES, type ManualJobCostCategory } from "@/server/costs/queries";
+import { assertJobVisible } from "@/server/jobs/access";
 
 export interface ActionState {
   error?: string;
@@ -104,6 +105,8 @@ export async function addJobCostAction(
   if (!can(user, PERMISSIONS.MANAGE_JOB_COSTS)) {
     return { error: "لا تملك صلاحية تسجيل تكاليف المهمة." };
   }
+  const visErr = await assertJobVisible(user, jobId);
+  if (visErr) return { error: visErr };
 
   const parsed = AddJobCostSchema.safeParse({
     category: formData.get("category"),
@@ -121,6 +124,18 @@ export async function addJobCostAction(
   const amount = parseNonNegativeMoneyInput(parsed.data.amount);
   if (amount === null || !isPositive(amount)) {
     return { error: "المبلغ غير صحيح" };
+  }
+
+  // A caller-supplied jobItemId is a child of THIS job or it's rejected —
+  // never silently attributed to whichever item the id happens to name
+  // (master execution prompt's child-entity IDOR audit).
+  if (parsed.data.jobItemId) {
+    const [item] = await db
+      .select({ id: jobItems.id })
+      .from(jobItems)
+      .where(and(eq(jobItems.id, parsed.data.jobItemId), eq(jobItems.jobId, jobId)))
+      .limit(1);
+    if (!item) return { error: "هذا البند لا ينتمي إلى هذه المهمة." };
   }
 
   const autoApproved = isSuperAdmin(user);

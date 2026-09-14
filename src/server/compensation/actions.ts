@@ -10,7 +10,6 @@ import {
   compensationRules,
   penaltyRules,
   bonusRules,
-  jobs,
   users,
   userPermissions,
 } from "@/server/db/schema";
@@ -18,6 +17,7 @@ import { getCurrentUser } from "@/server/auth/session";
 import { can, isSuperAdmin, requesterMayApprove } from "@/server/auth/permissions";
 import { PERMISSIONS, type PermissionKey } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
+import { assertJobVisible } from "@/server/jobs/access";
 import { notifyUser, notifyUsers } from "@/server/notifications";
 import { createApprovalRequest } from "@/server/approvals/decide";
 import {
@@ -74,11 +74,6 @@ async function userExists(userId: string): Promise<boolean> {
   return !!row;
 }
 
-async function jobExists(jobId: string): Promise<boolean> {
-  const [row] = await db.select({ id: jobs.id }).from(jobs).where(eq(jobs.id, jobId)).limit(1);
-  return !!row;
-}
-
 const AllocateEarningSchema = z.object({
   userId: z.string().trim().min(1, { error: "الفني مطلوب" }),
   jobItemId: z.string().trim().optional(),
@@ -121,7 +116,8 @@ export async function allocateInstallationEarning(
   }
   const data = parsed.data;
 
-  if (!(await jobExists(jobId))) return { error: "المهمة غير موجودة." };
+  const visErr = await assertJobVisible(actingUser, jobId);
+  if (visErr) return { error: visErr };
   if (!(await userExists(data.userId))) return { error: "المستخدم غير موجود." };
 
   let amount: Money;
@@ -247,7 +243,10 @@ export async function recordDailyWage(
     return { error: "لا يوجد أجر يومي محدد لهذا المستخدم — الرجاء إدخال مبلغ." };
   }
 
-  if (jobId && !(await jobExists(jobId))) return { error: "المهمة غير موجودة." };
+  if (jobId) {
+    const visErr = await assertJobVisible(actingUser, jobId);
+    if (visErr) return { error: visErr };
+  }
 
   const description = `أجر يومي — ${date}`;
 
@@ -388,7 +387,10 @@ export async function recordBonus(
     return { error: "المبلغ مطلوب." };
   }
 
-  if (jobId && !(await jobExists(jobId))) return { error: "المهمة غير موجودة." };
+  if (jobId) {
+    const visErr = await assertJobVisible(actingUser, jobId);
+    if (visErr) return { error: visErr };
+  }
 
   const description = rule?.label ?? customDescription!;
 
@@ -466,7 +468,10 @@ export async function recordPenalty(
     return { error: "المبلغ مطلوب." };
   }
 
-  if (jobId && !(await jobExists(jobId))) return { error: "المهمة غير موجودة." };
+  if (jobId) {
+    const visErr = await assertJobVisible(actingUser, jobId);
+    if (visErr) return { error: visErr };
+  }
 
   const title = rule?.label ?? customDescription!;
   const description = `${title} — ${reason}`;

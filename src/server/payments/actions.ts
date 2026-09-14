@@ -11,6 +11,7 @@ import { PERMISSIONS } from "@/server/auth/permission-keys";
 import { parseNonNegativeMoneyInput, isPositive } from "@/server/money";
 import { recordCustomerPayment, getUserIdsWithPermission } from "@/server/payments/record";
 import { notifyUsers } from "@/server/notifications";
+import { assertJobVisible } from "@/server/jobs/access";
 
 export interface ActionState {
   error?: string;
@@ -43,6 +44,12 @@ export async function addPaymentAction(
   if (!can(user, PERMISSIONS.COLLECT_PAYMENT)) {
     return { error: "لا تملك صلاحية تسجيل الدفعات." };
   }
+  // COLLECT_PAYMENT alone (held by installers) says nothing about which
+  // jobs this caller may see — without this, any COLLECT_PAYMENT holder
+  // could record a payment against an arbitrary job UUID they have no
+  // relationship to (master execution prompt's job-scoped IDOR audit).
+  const visErr = await assertJobVisible(user, jobId);
+  if (visErr) return { error: visErr };
 
   const parsed = AddPaymentSchema.safeParse({
     amount: formData.get("amount"),

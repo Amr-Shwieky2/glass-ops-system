@@ -11,6 +11,7 @@ import { PERMISSIONS } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
 import { notifyUser } from "@/server/notifications";
 import { advanceJobStatus } from "@/server/jobs/status";
+import { assertJobVisible } from "@/server/jobs/access";
 
 export interface ActionState {
   error?: string;
@@ -61,6 +62,8 @@ export async function createRepairAction(
   if (!can(user, PERMISSIONS.CREATE_REPAIR)) {
     return { error: "لا تملك صلاحية تسجيل إصلاح." };
   }
+  const visErr = await assertJobVisible(user, jobId);
+  if (visErr) return { error: visErr };
 
   const parsed = CreateRepairSchema.safeParse({
     problemDescription: formData.get("problemDescription"),
@@ -174,6 +177,9 @@ export async function updateRepairStatusAction(
     .where(eq(repairs.id, repairId))
     .limit(1);
   if (!existing) return { error: "الإصلاح غير موجود." };
+
+  const visErr = await assertJobVisible(user, existing.jobId);
+  if (visErr) return { error: visErr };
 
   const targetStatus = parsed.data.status;
   const now = new Date();

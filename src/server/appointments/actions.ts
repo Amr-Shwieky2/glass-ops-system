@@ -7,13 +7,14 @@ import { db } from "@/server/db/client";
 import { appointments, appointmentAssignees, jobs, jobStatuses } from "@/server/db/schema";
 import { getCurrentUser } from "@/server/auth/session";
 import type { AuthedUser } from "@/server/auth/session";
-import { can, canAny } from "@/server/auth/permissions";
+import { can } from "@/server/auth/permissions";
 import { PERMISSIONS, type PermissionKey } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
 import { notifyUsers } from "@/server/notifications";
 import { advanceJobStatus } from "@/server/jobs/status";
 import { getAssigneeConflicts, isAppointmentAssignee } from "@/server/appointments/queries";
 import { COMPANY_TIMEZONE } from "@/lib/company-day";
+import { assertJobVisible } from "@/server/jobs/access";
 
 export interface ActionState {
   error?: string;
@@ -45,18 +46,6 @@ const APPOINTMENT_TYPE_TARGET_STATUS: Record<string, string | undefined> = {
   installation: "installation_scheduled",
   repair: "repair_scheduled",
 };
-
-// The four permissions that, together, cover "could have scheduled some
-// kind of appointment" — used as the broad admin-side fallback for actions
-// that are otherwise gated by "is this assigned to me" (cancel, arrive,
-// field notes), mirroring removeAssignment's leniency in
-// src/server/jobs/actions.ts.
-const SCHEDULING_PERMISSIONS: PermissionKey[] = [
-  PERMISSIONS.CREATE_MEASUREMENT,
-  PERMISSIONS.ASSIGN_INSTALLER,
-  PERMISSIONS.CREATE_REPAIR,
-  PERMISSIONS.VIEW_ALL_JOBS,
-];
 
 const APPOINTMENT_TYPE_LABEL_AR: Record<string, string> = {
   measurement: "قياس",
@@ -115,6 +104,12 @@ export async function scheduleAppointmentAction(
   if (!can(user, requiredPermission)) {
     return { error: "لا تملك صلاحية جدولة هذا النوع من المواعيد." };
   }
+  // CREATE_MEASUREMENT/ASSIGN_INSTALLER/CREATE_REPAIR alone say nothing
+  // about which jobs this caller may see — re-derive visibility rather
+  // than trusting the client-supplied jobId (master execution prompt's
+  // child-entity/job-scoped IDOR audit).
+  const visErr = await assertJobVisible(user, jobId);
+  if (visErr) return { error: visErr };
 
   const scheduledStart = new Date(data.scheduledStart);
   if (Number.isNaN(scheduledStart.getTime())) {
@@ -242,8 +237,14 @@ export async function cancelAppointmentAction(
     .limit(1);
   if (!appointment) return { error: "الموعد غير موجود." };
 
+  // Being assigned to this specific appointment is always enough; failing
+  // that, the caller needs genuine visibility into the appointment's REAL
+  // job (VIEW_ALL_JOBS or independent involvement) — not merely SOME
+  // scheduling-flavored permission, which previously let e.g. any
+  // CREATE_MEASUREMENT holder cancel ANY appointment company-wide
+  // regardless of which job it belonged to.
   const isAssignee = await isAppointmentAssignee(appointmentId, user.id);
-  if (!isAssignee && !canAny(user, SCHEDULING_PERMISSIONS)) {
+  if (!isAssignee && (await assertJobVisible(user, appointment.jobId))) {
     return { error: "لا تملك صلاحية إلغاء هذا الموعد." };
   }
 
@@ -314,11 +315,12 @@ export async function markAppointmentArrivedAction(
   // "You can always act on what's assigned to you" (matches
   // completeInstallationAction's scoping via COMPLETE_INSTALLATION, here
   // applied directly against appointment_assignees since marking arrival
-  // shouldn't require any broad admin permission) — OR one of the four
-  // scheduling permissions, for dispatchers/admins acting on someone
-  // else's appointment.
+  // shouldn't require any broad admin permission) — OR genuine visibility
+  // into the appointment's real job, for dispatchers/admins acting on
+  // someone else's appointment (not merely holding some scheduling-
+  // flavored permission unrelated to this specific job).
   const isAssignee = await isAppointmentAssignee(appointmentId, user.id);
-  if (!isAssignee && !canAny(user, SCHEDULING_PERMISSIONS)) {
+  if (!isAssignee && (await assertJobVisible(user, appointment.jobId))) {
     return { error: "لا تملك صلاحية تحديث حالة هذا الموعد." };
   }
 
@@ -430,7 +432,7 @@ export async function addFieldNoteAction(
   if (!job) return { error: "المهمة غير موجودة." };
 
   const assigned = await isAssignedToJob(jobId, user.id);
-  if (!assigned && !canAny(user, SCHEDULING_PERMISSIONS)) {
+  if (!assigned && (await assertJobVisible(user, jobId))) {
     return { error: "لا تملك صلاحية إضافة ملاحظات على هذه المهمة." };
   }
 

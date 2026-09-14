@@ -22,6 +22,7 @@ import { createApprovalRequest } from "@/server/approvals/decide";
 import { lockJobForWrite } from "@/server/jobs/locking";
 import { createProductionRequest } from "./create-request";
 import { checkRateLimit } from "@/server/security/rate-limit";
+import { assertJobVisible } from "@/server/jobs/access";
 
 export interface ActionState {
   error?: string;
@@ -71,6 +72,8 @@ export async function sendToFactoryAction(
   if (!can(user, PERMISSIONS.CREATE_PRODUCTION_ORDER)) {
     return { error: "لا تملك صلاحية إرسال طلبات إنتاج." };
   }
+  const visErr = await assertJobVisible(user, jobId);
+  if (visErr) return { error: visErr };
 
   const parsed = SendToFactorySchema.safeParse({
     details: formData.get("details"),

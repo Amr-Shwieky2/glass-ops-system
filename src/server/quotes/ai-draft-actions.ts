@@ -6,6 +6,7 @@ import { can } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
 import { getJobDetail } from "@/server/jobs/queries";
+import { assertJobVisible } from "@/server/jobs/access";
 import {
   generateHebrewQuoteDraft,
   QuoteDraftGenerationError,
@@ -64,6 +65,8 @@ export async function generateQuoteDraftAction(
   if (!can(user, PERMISSIONS.CREATE_QUOTE)) {
     return { error: "لا تملك صلاحية إنشاء عروض الأسعار." };
   }
+  const visErr = await assertJobVisible(user, jobId);
+  if (visErr) return { error: visErr };
 
   const parsed = GenerateQuoteDraftSchema.safeParse({
     jobDescription: formData.get("jobDescription"),

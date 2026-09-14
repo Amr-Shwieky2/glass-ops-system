@@ -1,5 +1,40 @@
 # Sprint 0 Requirements Matrix — Glass Operations Management System
 
+## Sprint 1 cleanup changelog (2026-09-14) — job-scoped/child-entity Server Action authorization audit
+
+Closes the two items Sprint 1 explicitly left open (see that entry's "Explicitly NOT done" list below): S1.2 (job-scoped actions trusting a caller-supplied `jobId` with no visibility check) and S1.3 (child-entity actions trusting a caller-supplied `jobId` with no ownership check against the child's real parent). Ordered before Sprint 4 per explicit instruction, since Sprint 4's factory/installer automation sits on top of this same job-authorization layer.
+
+**Implemented:**
+- New shared helper `assertJobVisible(user, jobId)` (`src/server/jobs/access.ts`): a `VIEW_ALL_JOBS` holder passes after an existence check; everyone else must satisfy the pre-existing `isJobVisibleToUser` involvement check (measuredBy / pricingResponsible / dealClosedBy / `job_assignments`).
+- Applied to every remaining job-scoped action named by the audit, plus every other action in the same shape found while reading the surrounding files ("and any similar action"): `scheduleAppointmentAction`, `cancelAppointmentAction`, `markAppointmentArrivedAction`, `addFieldNoteAction` (`appointments/actions.ts`); `addPaymentAction` (`payments/actions.ts`); `cancelJob`, `addJobItem`, `assignToJob`, `deleteJobItem`, `removeAssignment` (`jobs/actions.ts`); `closeJobAction` (`jobs/close.ts`); `addJobCostAction` (`costs/actions.ts`, plus a new jobItemId-belongs-to-job check); `saveQuoteDraft`, `sendQuoteAction`, `convertQuoteToJob` (`quotes/actions.ts`); `generateQuoteDraftAction` (`quotes/ai-draft-actions.ts`); `createRepairAction`, `updateRepairStatusAction` (`repairs/actions.ts`); `sendToFactoryAction` (`production/actions.ts`); `allocateInstallationEarning`, `recordDailyWage`, `recordBonus`, `recordPenalty` (`compensation/actions.ts`); `estimateCommission`, `finalizeCommission` (`compensation/commission.ts`).
+- Child-entity mismatch fix (the S1.3 half): `deleteJobItem`, `removeAssignment`, `sendQuoteAction`, `convertQuoteToJob` now derive the authoritative `jobId` from the child row itself (job item / assignment / quote) and reject when it doesn't match the caller-supplied `jobId`, instead of trusting the parameter. `convertQuoteToJob` is the most severe of these — it now uses the quote's own `jobId` for both the row lock and the financial `applySignedQuoteToJob` write, not the caller-supplied one.
+- A second, related flaw caught while reading `appointments/actions.ts`, not explicitly named but the same shape: removed the over-broad `SCHEDULING_PERMISSIONS` fallback (`[CREATE_MEASUREMENT, ASSIGN_INSTALLER, CREATE_REPAIR, VIEW_ALL_JOBS]`) that let a holder of *any one* of those 4 permissions act on an appointment for a job they had zero relationship to, as an alternate path around the assignee check. Replaced with `assertJobVisible` against the appointment's real derived job in all 3 call sites.
+
+**Existing functionality preserved:** every previously-working legitimate flow (a self-triggered measurement/appointment/payment/quote/repair/production/compensation action by an involved user, or by a `VIEW_ALL_JOBS` holder) continues to succeed unchanged, confirmed by the full E2E suite — including the two new tests' own "the legitimate call still works" assertions.
+
+**Files changed** (10 edited + 1 new production file, 1 new test file):
+`src/server/jobs/access.ts` (new); `src/server/jobs/actions.ts`; `src/server/jobs/close.ts`; `src/server/appointments/actions.ts`; `src/server/payments/actions.ts`; `src/server/costs/actions.ts`; `src/server/quotes/actions.ts`; `src/server/quotes/ai-draft-actions.ts`; `src/server/repairs/actions.ts`; `src/server/production/actions.ts`; `src/server/compensation/actions.ts`; `src/server/compensation/commission.ts`; `tests/e2e/job-scoped-authorization.spec.ts` (new).
+
+**Database changes:** none. No migration, no schema change — this is purely an application-layer authorization fix.
+
+**Permissions changed:** none. No new permission key, no seed change — the fix adds a job-relationship check on top of the permission keys that already existed; it does not gate on anything new.
+
+**Tests added:** 2 new Playwright E2E tests (`tests/e2e/job-scoped-authorization.spec.ts`), each proving one of the two bug classes is closed at the actual Server Action wire-protocol level — a real request is captured then replayed with one argument tampered, not just a page-navigation check (the page itself already blocked navigation before this fix, so only a direct-call replay proves the server-side gap is closed):
+1. `createRepairAction` — a CREATE_REPAIR holder (Basel) cannot create a repair on a job he has no relationship to, even via a tampered direct replay; asserted against the `repairs` table, not just the HTTP status.
+2. `deleteJobItem` — a caller (Issam) legitimately allowed to act on his own job cannot delete a job item belonging to a different, unrelated job, even via a tampered direct replay; asserted against `job_items` (the victim item survives, the legitimate one is actually gone).
+
+**Verification** (fresh run against the current repository state, 2026-09-14):
+- Lint (`npm run lint`): **PASSED**, 0 errors, 0 warnings.
+- Typecheck (`npm run typecheck`): **PASSED**, 0 errors.
+- Unit tests (vitest): **133/133 passed**, 0 failed (unchanged — no unit-level code touched this pass).
+- E2E tests (Playwright): **32/32 passed**, 0 failed (30 pre-existing + 2 new), fresh dev server (`.next` wiped and rebuilt) against a freshly reseeded database.
+
+**Remaining gaps (honest, not closed by this pass):**
+- `checks/actions.ts`'s `createIncomingCheckAction`/`createOutgoingCheckAction` accept an optional `jobId` field with no existence/ownership validation. Left deliberately lower-priority: gated by `MANAGE_CHECKS` (only Mohammad, a `VIEW_ALL_JOBS` holder, has it in the current seed) and the field is an informational tag on the check row, not an authorization-bearing mutation target reachable by an unprivileged holder today. Recorded here rather than silently dropped.
+- Only 2 of the ~16 fixed call sites have a dedicated wire-level attack-replay regression test (one per distinct bug class, given the fix is one shared helper) — the rest are covered indirectly by the existing E2E suite's happy-path assertions (which would fail if the fix broke a legitimate flow) but not by a dedicated per-action attack test.
+
+**Next sprint:** Sprint 4 — factory attachments (real production-relevant files and specs via a factory-token-protected path, excluding financial/customer data), installer post-signing automation (restricted card; a "Needs Installer Assignment" attention item when nobody is assigned), and propagating confirmed signing-time address/location into the operational job record without destroying the signed historical evidence.
+
 ## Sprint 3 changelog (2026-09-14) — AI Hebrew quote + signing compliance
 
 Verified against master execution prompt sections 5 (A1–A5) and 8 (G1–G7). Two real fixes shipped and verified; one attempted, tested, and deliberately reverted with evidence — reported honestly rather than claimed.

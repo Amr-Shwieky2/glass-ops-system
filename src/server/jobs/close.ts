@@ -10,6 +10,7 @@ import { PERMISSIONS } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
 import { getJobPayments } from "@/server/payments/queries";
 import { compareMoney } from "@/server/money";
+import { assertJobVisible } from "@/server/jobs/access";
 
 export interface ActionState {
   error?: string;
@@ -59,6 +60,8 @@ export async function closeJobAction(
   if (!can(user, PERMISSIONS.CLOSE_DEAL)) {
     return { error: "لا تملك صلاحية إغلاق المهام." };
   }
+  const visErr = await assertJobVisible(user, jobId);
+  if (visErr) return { error: visErr };
 
   const [job] = await db
     .select({

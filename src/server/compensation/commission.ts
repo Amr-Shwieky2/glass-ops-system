@@ -12,6 +12,7 @@ import { recordAudit } from "@/server/audit";
 import { getSetting } from "@/server/settings";
 import { subtractMoney, multiplyMoney, sumMoney, type Money } from "@/server/money";
 import { writeLedgerEntry } from "@/server/compensation/ledger";
+import { assertJobVisible } from "@/server/jobs/access";
 
 export interface ActionState {
   error?: string;
@@ -106,6 +107,8 @@ export async function estimateCommission(jobId: string): Promise<ActionState> {
   if (!can(user, PERMISSIONS.MANAGE_TECHNICIAN_PAYMENTS)) {
     return { error: "لا تملك صلاحية تقدير العمولات." };
   }
+  const visErr = await assertJobVisible(user, jobId);
+  if (visErr) return { error: visErr };
 
   const computeResult = await computeCommission(jobId);
   if (isComputeError(computeResult)) return { error: computeResult.error };
@@ -273,6 +276,8 @@ export async function finalizeCommission(jobId: string): Promise<ActionState> {
   if (!can(user, PERMISSIONS.MANAGE_TECHNICIAN_PAYMENTS)) {
     return { error: "لا تملك صلاحية اعتماد العمولات." };
   }
+  const visErr = await assertJobVisible(user, jobId);
+  if (visErr) return { error: visErr };
 
   const computed = await computeCommission(jobId);
   if (isComputeError(computed)) return { error: computed.error };

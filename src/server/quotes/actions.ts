@@ -29,6 +29,7 @@ import { createProductionRequest } from "@/server/production/create-request";
 import { createQuoteVersion, type QuoteItemInput } from "./versions";
 import { applySignedQuoteToJob } from "./convert";
 import { checkRateLimit } from "@/server/security/rate-limit";
+import { assertJobVisible } from "@/server/jobs/access";
 
 export interface ActionState {
   error?: string;
@@ -85,6 +86,8 @@ export async function saveQuoteDraft(
   if (!can(user, PERMISSIONS.CREATE_QUOTE)) {
     return { error: "لا تملك صلاحية إنشاء عروض الأسعار." };
   }
+  const visErr = await assertJobVisible(user, jobId);
+  if (visErr) return { error: visErr };
 
   const parsed = SaveQuoteDraftSchema.safeParse({
     quoteId: emptyToUndefined(formData.get("quoteId")),
@@ -181,13 +184,23 @@ export async function sendQuoteAction(
   }
 
   const [quote] = await db
-    .select({ currentVersionId: quotes.currentVersionId })
+    .select({ currentVersionId: quotes.currentVersionId, jobId: quotes.jobId })
     .from(quotes)
     .where(eq(quotes.id, quoteId))
     .limit(1);
   if (!quote?.currentVersionId) {
     return { error: "لا يوجد عرض سعر جاهز للإرسال." };
   }
+  // The quote's OWN jobId is authoritative, never the caller-supplied
+  // parameter — without this, a mismatched jobId could advance an
+  // unrelated job's status to quote_sent while sending someone else's
+  // quote (master execution prompt's child-entity IDOR audit).
+  if (quote.jobId !== jobId) {
+    return { error: "معرّف المهمة لا يطابق عرض السعر." };
+  }
+  const visErr = await assertJobVisible(user, quote.jobId);
+  if (visErr) return { error: visErr };
+
   const [version] = await db
     .select({ validUntil: quoteVersions.validUntil })
     .from(quoteVersions)
@@ -210,7 +223,7 @@ export async function sendQuoteAction(
       .update(quotes)
       .set({ status: "sent", updatedAt: new Date() })
       .where(eq(quotes.id, quoteId));
-    await advanceJobStatus(tx, jobId, "quote_sent");
+    await advanceJobStatus(tx, quote.jobId, "quote_sent");
     await recordAudit(
       {
         userId: user!.id,
@@ -222,7 +235,7 @@ export async function sendQuoteAction(
     );
   });
 
-  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath(`/jobs/${quote.jobId}`);
   return { success: true, publicPath: `/public/q/${token}` };
 }
 
@@ -240,13 +253,23 @@ export async function convertQuoteToJob(
   }
 
   const [quote] = await db
-    .select({ signedVersionId: quotes.signedVersionId })
+    .select({ signedVersionId: quotes.signedVersionId, jobId: quotes.jobId })
     .from(quotes)
     .where(eq(quotes.id, quoteId))
     .limit(1);
   if (!quote?.signedVersionId) {
     return { error: "لا يوجد عرض موقّع لتحويله." };
   }
+  // The quote's OWN jobId is authoritative, never the caller-supplied
+  // parameter — without this, a mismatched jobId would apply ONE quote's
+  // signed items/price onto a COMPLETELY UNRELATED job (the single most
+  // severe instance the master execution prompt's child-entity IDOR audit
+  // named: this writes financial data, not just reads it).
+  if (quote.jobId !== jobId) {
+    return { error: "معرّف المهمة لا يطابق عرض السعر." };
+  }
+  const visErr = await assertJobVisible(user, quote.jobId);
+  if (visErr) return { error: visErr };
 
   // The job's terminal/already-converted state is checked again below,
   // INSIDE the transaction, under a row lock (lockJobForWrite) — not just
@@ -255,7 +278,7 @@ export async function convertQuoteToJob(
   // concurrently with this manual click; see lockJobForWrite's doc comment.
   let result: ActionState = { success: true };
   await db.transaction(async (tx) => {
-    const locked = await lockJobForWrite(tx, jobId);
+    const locked = await lockJobForWrite(tx, quote.jobId);
     if (!locked) {
       result = { error: "المهمة غير موجودة" };
       return;
@@ -276,7 +299,7 @@ export async function convertQuoteToJob(
     // to applySignedQuoteToJob (src/server/quotes/convert.ts), shared with
     // the automatic-on-signing path in signQuotePublicly below.
     await applySignedQuoteToJob(tx, {
-      jobId,
+      jobId: quote.jobId,
       quoteId,
       signedVersionId: quote.signedVersionId!,
       dealClosedByUserId: user!.id,
@@ -284,7 +307,7 @@ export async function convertQuoteToJob(
   });
   if (result.error) return result;
 
-  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath(`/jobs/${quote.jobId}`);
   return { success: true };
 }
 

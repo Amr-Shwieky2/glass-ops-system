@@ -22,7 +22,7 @@ import { nextDocumentNumber } from "@/server/numbering";
 import { isPlausiblePhone, normalizePhone } from "@/server/tokens";
 import { parseNonNegativeMoneyInput } from "@/server/money";
 import { COMPANY_TIMEZONE } from "@/lib/company-day";
-import { isJobVisibleToUser } from "@/server/jobs/queries";
+import { assertJobVisible } from "@/server/jobs/access";
 
 export interface ActionState {
   error?: string;
@@ -185,10 +185,9 @@ export async function createMeasurement(
   // of which UI calls it — re-derive visibility here rather than trusting
   // the client-supplied jobId, or a restricted user could self-grant
   // future visibility into an arbitrary job by setting themselves as its
-  // measuredByUserId (see isJobVisibleToUser's doc comment).
-  if (!can(user, PERMISSIONS.VIEW_ALL_JOBS) && !(await isJobVisibleToUser(jobId, user!.id))) {
-    return { error: "لا تملك صلاحية الوصول إلى هذه المهمة." };
-  }
+  // measuredByUserId (see assertJobVisible's doc comment).
+  const visErr = await assertJobVisible(user, jobId);
+  if (visErr) return { error: visErr };
 
   const parsed = MeasurementSchema.safeParse({
     measuredAt: formData.get("measuredAt"),
@@ -305,6 +304,8 @@ export async function addJobItem(
   if (!canAny(user, [PERMISSIONS.CREATE_PRICE, PERMISSIONS.EDIT_PRICE])) {
     return { error: "لا تملك صلاحية إضافة بنود التسعير." };
   }
+  const visErr = await assertJobVisible(user, jobId);
+  if (visErr) return { error: visErr };
 
   const parsed = JobItemSchema.safeParse({
     workTypeId: emptyToUndefined(formData.get("workTypeId")),
@@ -356,14 +357,31 @@ export async function deleteJobItem(
   if (!canAny(user, [PERMISSIONS.CREATE_PRICE, PERMISSIONS.EDIT_PRICE])) {
     return { error: "لا تملك صلاحية حذف بنود التسعير." };
   }
+
+  // Never trust the caller-supplied jobId as authority for a child row —
+  // derive the item's REAL job from the row itself and require it to
+  // match what the caller claims, rather than deleting whatever
+  // jobItemId was supplied regardless of which job it actually belongs
+  // to (master execution prompt's child-entity IDOR audit).
+  const [item] = await db
+    .select({ id: jobItems.id, jobId: jobItems.jobId })
+    .from(jobItems)
+    .where(eq(jobItems.id, jobItemId))
+    .limit(1);
+  if (!item) return { error: "البند غير موجود." };
+  if (item.jobId !== jobId) return { error: "هذا البند لا ينتمي إلى هذه المهمة." };
+
+  const visErr = await assertJobVisible(user, item.jobId);
+  if (visErr) return { error: visErr };
+
   await db.delete(jobItems).where(eq(jobItems.id, jobItemId));
   await recordAudit({
     userId: user!.id,
     action: "job_item.delete",
     entityType: "job",
-    entityId: jobId,
+    entityId: item.jobId,
   });
-  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath(`/jobs/${item.jobId}`);
   return { success: true };
 }
 
@@ -385,6 +403,8 @@ export async function assignToJob(
   if (!can(user, PERMISSIONS.ASSIGN_INSTALLER)) {
     return { error: "لا تملك صلاحية تعيين فنيين." };
   }
+  const visErr = await assertJobVisible(user, jobId);
+  if (visErr) return { error: visErr };
 
   const parsed = AssignmentSchema.safeParse({
     userId: emptyToUndefined(formData.get("userId")),
@@ -435,14 +455,26 @@ export async function removeAssignment(
   if (!can(user, PERMISSIONS.ASSIGN_INSTALLER)) {
     return { error: "لا تملك صلاحية إزالة التعيينات." };
   }
+
+  const [assignment] = await db
+    .select({ id: jobAssignments.id, jobId: jobAssignments.jobId })
+    .from(jobAssignments)
+    .where(eq(jobAssignments.id, assignmentId))
+    .limit(1);
+  if (!assignment) return { error: "التعيين غير موجود." };
+  if (assignment.jobId !== jobId) return { error: "هذا التعيين لا ينتمي إلى هذه المهمة." };
+
+  const visErr = await assertJobVisible(user, assignment.jobId);
+  if (visErr) return { error: visErr };
+
   await db.delete(jobAssignments).where(eq(jobAssignments.id, assignmentId));
   await recordAudit({
     userId: user!.id,
     action: "job_assignment.remove",
     entityType: "job",
-    entityId: jobId,
+    entityId: assignment.jobId,
   });
-  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath(`/jobs/${assignment.jobId}`);
   return { success: true };
 }
 
@@ -479,6 +511,8 @@ export async function cancelJob(
   if (!can(user, PERMISSIONS.CLOSE_DEAL)) {
     return { error: "لا تملك صلاحية إلغاء المهام." };
   }
+  const visErr = await assertJobVisible(user, jobId);
+  if (visErr) return { error: visErr };
   const reason = emptyToUndefined(formData.get("reason"));
 
   const [cancelledStatus] = await db
