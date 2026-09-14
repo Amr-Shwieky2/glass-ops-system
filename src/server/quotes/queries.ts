@@ -169,18 +169,31 @@ export async function touchPublicLinkAccess(token: string): Promise<void> {
 }
 
 /** Everything the PDF template (src/server/pdf/quote-template.ts) needs for
- * one quote's CURRENT version, keyed by quoteId — used by the internal,
- * permission-gated PDF route. (The public PDF route uses
- * getQuoteByPublicToken instead, since it has no employee session to key
- * off of and must validate the link itself.) */
+ * one quote, keyed by quoteId — used by the internal, permission-gated PDF
+ * route. (The public PDF route uses getQuoteByPublicToken instead, since
+ * it has no employee session to key off of and must validate the link
+ * itself.)
+ *
+ * Renders quote.signedVersionId when one exists, quote.currentVersionId
+ * otherwise — NOT unconditionally currentVersionId. A signed document must
+ * always render exactly as signed (master prompt: "never modify
+ * historical signed data"); once a later price edit creates a new current
+ * draft (quotes.status resets to 'draft', currentVersionId moves forward,
+ * signedVersionId never does), this route used to silently switch to
+ * showing that new, unsigned draft under the same "quote's official PDF"
+ * link — an employee opening what they believe is the customer's signed
+ * contract would see different numbers with no indication of the
+ * mismatch. A staff member who specifically wants to preview the new,
+ * unsent draft can do so through the quote builder dialog itself. */
 export async function getQuoteRenderData(quoteId: string) {
   const [quote] = await db.select().from(quotes).where(eq(quotes.id, quoteId)).limit(1);
-  if (!quote || !quote.currentVersionId) return null;
+  const versionIdToRender = quote?.signedVersionId ?? quote?.currentVersionId;
+  if (!quote || !versionIdToRender) return null;
 
   const [version] = await db
     .select()
     .from(quoteVersions)
-    .where(eq(quoteVersions.id, quote.currentVersionId))
+    .where(eq(quoteVersions.id, versionIdToRender))
     .limit(1);
   if (!version) return null;
 

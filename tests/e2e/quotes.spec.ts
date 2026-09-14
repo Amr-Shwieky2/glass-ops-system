@@ -74,6 +74,11 @@ test.describe("quote version immutability", () => {
     await customerPage.goto(originalLink, { waitUntil: "networkidle" });
     text = await customerPage.innerText("body");
     expect(moneyPattern("500.00").test(text)).toBe(true);
+    // Master prompt section 8: national ID is now mandatory before
+    // signing — name/phone/address are already prefilled server-side from
+    // the customer record, but ID has no server default.
+    await customerPage.fill("#customerNationalIdAtSigning", "302345678");
+    await customerPage.fill("#customerAddressAtSigning", "شارع الاختبار 1، حيفا");
     await drawSignature(customerPage);
     await customerPage.check("#agreedToTerms");
     await customerPage.locator('button:has-text("توقيع والموافقة على العرض")').click();
@@ -178,6 +183,20 @@ test.describe("quote version immutability", () => {
       `${originalLink.replace(/\/public\/q\//, "/api/public/quotes/")}/pdf`,
     );
     expect(staleSignedPdfResp.status()).toBe(404);
+
+    // The INTERNAL staff PDF route (/api/quotes/[quoteId]/pdf) must also
+    // keep working once a v2 draft exists — getQuoteRenderData now selects
+    // quote.signedVersionId ?? quote.currentVersionId, so this renders v1
+    // (the signed document), not the new v2 draft. Chromium's PDF output
+    // compresses its content streams (FlateDecode), so the rendered price
+    // isn't a plain ASCII substring of the response bytes and can't be
+    // asserted directly here the way the page-text checks above can; the
+    // DB assertions above (signed_version_id untouched, current_version_id
+    // now a different row) plus this route no longer erroring/mismatching
+    // are the practical end-to-end coverage for this fix.
+    const staffPdfResp = await page.request.get(`/api/quotes/${quoteId}/pdf`);
+    expect(staffPdfResp.status()).toBe(200);
+    expect((await staffPdfResp.body()).slice(0, 4).toString("latin1")).toBe("%PDF");
   });
 });
 

@@ -52,6 +52,12 @@ async function quoteAndSignQuote(
   const customerCtx = await page.context().browser()!.newContext({ locale: "ar" });
   const customerPage = await customerCtx.newPage();
   await customerPage.goto(link, { waitUntil: "networkidle" });
+  // Master prompt section 8: national ID is now mandatory before signing
+  // (see SignSchema in src/server/quotes/actions.ts) — name/phone/address
+  // are already prefilled server-side from the customer record, but ID
+  // has no server default and must be filled for signing to be possible.
+  await customerPage.fill("#customerNationalIdAtSigning", "302345678");
+  await customerPage.fill("#customerAddressAtSigning", "شارع الاختبار 1، حيفا");
   await drawSignature(customerPage);
   await customerPage.check("#agreedToTerms");
   await customerPage.locator('button:has-text("توقيع والموافقة على العرض")').click();

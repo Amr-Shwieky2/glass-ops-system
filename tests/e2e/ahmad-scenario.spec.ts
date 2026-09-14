@@ -169,6 +169,11 @@ test.describe("Ahmad end-to-end scenario (spec section 72)", () => {
     await customerPage.goto(signingLink, { waitUntil: "networkidle" });
     text = await customerPage.innerText("body");
     expect(moneyPattern("12000.00").test(text)).toBe(true);
+    // Master prompt section 8: national ID is now mandatory before
+    // signing — name/phone/address are already prefilled server-side from
+    // the customer record, but ID has no server default.
+    await customerPage.fill("#customerNationalIdAtSigning", "302345678");
+    await customerPage.fill("#customerAddressAtSigning", "شارع الاختبار 1، حيفا");
     await drawSignature(customerPage);
     await customerPage.check("#agreedToTerms");
     await customerPage.locator('button:has-text("توقيع والموافقة على العرض")').click();

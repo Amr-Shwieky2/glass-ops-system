@@ -80,10 +80,10 @@ export interface QuoteLabels {
     fullNameLabel: string;
     /** "رقم الهاتف" / "טלפון" */
     phoneLabel: string;
-    /** "رقم الهوية (اختياري)" / "ת.ז / ח.פ (אופציונלי)" — the Hebrew
-     * label is worded to cover a business/company registration number
-     * too (ח.פ), same field, no schema change; the Arabic label is left
-     * exactly as it already reads today. */
+    /** "رقم الهوية / رقم الشركة *" / "ת.ז / ח.פ *" — mandatory before
+     * signing (master prompt section 8): covers a business/company
+     * registration number too (ח.פ / رقم الشركة), same single field, no
+     * schema change. */
     nationalIdLabel: string;
     /** inline example clarifying a business/company number is also
      * accepted, "مثال: 302345678 أو رقم الشركة" / "לדוגמה: 302345678 או
@@ -159,11 +159,11 @@ const AR: QuoteLabels = {
   pdfDownloadLabel: "تحميل نسخة PDF",
   signingForm: {
     formTitle: "التوقيع والموافقة",
-    fullNameLabel: "الاسم",
-    phoneLabel: "رقم الهاتف",
-    nationalIdLabel: "رقم الهوية (اختياري)",
+    fullNameLabel: "الاسم *",
+    phoneLabel: "رقم الهاتف *",
+    nationalIdLabel: "رقم الهوية / رقم الشركة *",
     nationalIdPlaceholder: "مثال: 302345678 أو رقم السجل التجاري",
-    addressLabel: "العنوان",
+    addressLabel: "عنوان التركيب *",
     signaturePadLabel: "التوقيع",
     clearSignatureLabel: "مسح التوقيع",
     agreementText: "أوافق على بنود عرض السعر وشروط الدفع والعمل الموضحة أعلاه.",
@@ -211,11 +211,11 @@ const HE: QuoteLabels = {
   pdfDownloadLabel: "הורדת קובץ PDF",
   signingForm: {
     formTitle: "חתימה ואישור",
-    fullNameLabel: "שם מלא",
-    phoneLabel: "טלפון",
-    nationalIdLabel: "ת.ז / ח.פ (אופציונלי)",
+    fullNameLabel: "שם מלא *",
+    phoneLabel: "טלפון *",
+    nationalIdLabel: "ת.ז / ח.פ *",
     nationalIdPlaceholder: "לדוגמה: 302345678 או מספר ח.פ",
-    addressLabel: "כתובת",
+    addressLabel: "כתובת ההתקנה *",
     signaturePadLabel: "חתימה",
     clearSignatureLabel: "מחיקת החתימה",
     agreementText: "אני מאשר/ת את סעיפי הצעת המחיר ואת תנאי התשלום והעבודה המפורטים לעיל.",

@@ -293,11 +293,20 @@ export async function convertQuoteToJob(
 // random token itself is the security boundary, verified against
 // quote_public_links, not against a logged-in session.
 // ---------------------------------------------------------------------
+// Master prompt section 8: full name, phone, ID/company ID, and
+// installation address are all mandatory before signing, enforced
+// SERVER-SIDE (the client form disables its submit button and marks these
+// required too, but that is a courtesy — this schema is the real gate,
+// since a public endpoint like this one is reachable by any direct POST,
+// not only through the rendered form).
 const SignSchema = z.object({
   customerNameAtSigning: z.string().trim().min(1, { error: "الاسم مطلوب" }),
-  customerPhoneAtSigning: z.string().trim().optional(),
-  customerNationalIdAtSigning: z.string().trim().optional(),
-  customerAddressAtSigning: z.string().trim().optional(),
+  customerPhoneAtSigning: z.string().trim().min(1, { error: "رقم الهاتف مطلوب" }),
+  customerNationalIdAtSigning: z
+    .string()
+    .trim()
+    .min(1, { error: "رقم الهوية أو رقم الشركة مطلوب" }),
+  customerAddressAtSigning: z.string().trim().min(1, { error: "عنوان التركيب مطلوب" }),
   agreedToTerms: z.literal("on", { error: "يجب الموافقة على الشروط" }),
   signatureImage: z
     .string()

@@ -137,6 +137,7 @@ export function SignForm({
   const [idNumber, setIdNumber] = React.useState(
     () => readStoredProfile(customerId)?.idNumber || "",
   );
+  const [address, setAddress] = React.useState(defaultAddress);
 
   // Wraps the server action so the "remember this profile for next time"
   // write happens as a plain side effect of the submit itself, not in a
@@ -205,6 +206,7 @@ export function SignForm({
                 dir="ltr"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
+                required
               />
             </div>
             <div className="space-y-2">
@@ -218,6 +220,7 @@ export function SignForm({
                 placeholder={labels.signingForm.nationalIdPlaceholder}
                 value={idNumber}
                 onChange={(e) => setIdNumber(e.target.value)}
+                required
               />
             </div>
           </div>
@@ -226,8 +229,10 @@ export function SignForm({
             <Textarea
               id="customerAddressAtSigning"
               name="customerAddressAtSigning"
-              defaultValue={defaultAddress}
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
               rows={2}
+              required
             />
           </div>
 
@@ -260,7 +265,14 @@ export function SignForm({
           )}
 
           <SubmitButton
-            disabled={!signature || !agreed}
+            disabled={
+              !signature ||
+              !agreed ||
+              !name.trim() ||
+              !phone.trim() ||
+              !idNumber.trim() ||
+              !address.trim()
+            }
             idleLabel={labels.signingForm.submitLabel}
             pendingLabel={labels.signingForm.submitPendingLabel}
           />

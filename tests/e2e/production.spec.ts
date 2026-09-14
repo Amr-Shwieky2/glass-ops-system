@@ -60,6 +60,10 @@ async function quoteAndSignQuote(
   const customerCtx = await page.context().browser()!.newContext({ locale: "ar" });
   const customerPage = await customerCtx.newPage();
   await customerPage.goto(link, { waitUntil: "networkidle" });
+  // Master prompt section 8: national ID is now mandatory before signing —
+  // see the matching comment in financial.spec.ts's identical helper.
+  await customerPage.fill("#customerNationalIdAtSigning", "302345678");
+  await customerPage.fill("#customerAddressAtSigning", "شارع الاختبار 1، حيفا");
   await drawSignature(customerPage);
   await customerPage.check("#agreedToTerms");
   await customerPage.locator('button:has-text("توقيع والموافقة على العرض")').click();
