@@ -517,6 +517,150 @@ export async function recordPenalty(
   return { success: true };
 }
 
+const RecordOvertimeSchema = z.object({
+  hours: z.string().trim().min(1, { error: "عدد الساعات مطلوب" }),
+  hourlyRate: z.string().trim().min(1, { error: "أجر الساعة مطلوب" }),
+  jobId: z.string().trim().optional(),
+  notes: z.string().trim().optional(),
+});
+
+/** Records overtime pay (Sprint 7 — "technician adjustment workflows,
+ * overtime"): hours × hourly rate, both tracked on the ledger row itself
+ * (quantity/rateUsed) rather than collapsed into a single opaque amount,
+ * the same way allocateInstallationEarning's rule-based path keeps
+ * quantity/rateUsed alongside the computed total. */
+export async function recordOvertime(
+  userId: string,
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const actingUser = await getCurrentUser();
+  if (!can(actingUser, PERMISSIONS.MANAGE_TECHNICIAN_PAYMENTS)) {
+    return { error: "لا تملك صلاحية تسجيل العمل الإضافي." };
+  }
+  if (!(await userExists(userId))) return { error: "المستخدم غير موجود." };
+
+  const parsed = RecordOvertimeSchema.safeParse({
+    hours: formData.get("hours"),
+    hourlyRate: formData.get("hourlyRate"),
+    jobId: emptyToUndefined(formData.get("jobId")),
+    notes: emptyToUndefined(formData.get("notes")),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" };
+  }
+
+  const hours = parseNonNegativeMoneyInput(parsed.data.hours);
+  if (hours === null || !isPositive(hours)) return { error: "عدد ساعات غير صحيح." };
+  const hourlyRate = parseNonNegativeMoneyInput(parsed.data.hourlyRate);
+  if (hourlyRate === null || !isPositive(hourlyRate)) return { error: "أجر ساعة غير صحيح." };
+  const amount = multiplyMoney(hours, hourlyRate);
+
+  if (parsed.data.jobId) {
+    const visErr = await assertJobVisible(actingUser, parsed.data.jobId);
+    if (visErr) return { error: visErr };
+  }
+
+  const description = [
+    `عمل إضافي: ${hours} ساعة × ${formatILS(hourlyRate)}`,
+    parsed.data.notes,
+  ]
+    .filter(Boolean)
+    .join(" — ");
+
+  await db.transaction(async (tx) => {
+    const { id: ledgerEntryId } = await writeLedgerEntry(tx, {
+      userId,
+      entryType: "overtime",
+      amount,
+      quantity: hours,
+      rateUsed: hourlyRate,
+      relatedJobId: parsed.data.jobId,
+      description,
+      createdByUserId: actingUser!.id,
+      approvalStatus: "approved",
+      approvedByUserId: actingUser!.id,
+    });
+
+    await recordAudit(
+      {
+        userId: actingUser!.id,
+        action: "technician_ledger_entry.record_overtime",
+        entityType: "technician_ledger_entry",
+        entityId: ledgerEntryId,
+        newValue: { userId, jobId: parsed.data.jobId, hours, hourlyRate, amount },
+      },
+      tx,
+    );
+  });
+
+  if (parsed.data.jobId) revalidatePath(`/jobs/${parsed.data.jobId}`);
+  revalidatePath(`/finance/technicians/${userId}`);
+  return { success: true };
+}
+
+const RecordAdjustmentSchema = z.object({
+  direction: z.enum(["credit", "debit"], { error: "الاتجاه مطلوب" }),
+  amount: z.string().trim().min(1, { error: "المبلغ مطلوب" }),
+  description: z.string().trim().min(1, { error: "وصف التسوية مطلوب" }),
+});
+
+/** Records a free-form ledger adjustment (Sprint 7 — the enum's own
+ * 'other_adjustment' value existed with zero writer anywhere in the
+ * codebase before this). For anything that genuinely doesn't fit bonus/
+ * penalty/overtime/vehicle-deduction — a manual correction, a one-off
+ * credit or debit a manager needs to explain in their own words. */
+export async function recordAdjustment(
+  userId: string,
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const actingUser = await getCurrentUser();
+  if (!can(actingUser, PERMISSIONS.MANAGE_TECHNICIAN_PAYMENTS)) {
+    return { error: "لا تملك صلاحية تسجيل تسويات الحساب." };
+  }
+  if (!(await userExists(userId))) return { error: "المستخدم غير موجود." };
+
+  const parsed = RecordAdjustmentSchema.safeParse({
+    direction: formData.get("direction"),
+    amount: formData.get("amount"),
+    description: formData.get("description"),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" };
+  }
+
+  const amount = parseNonNegativeMoneyInput(parsed.data.amount);
+  if (amount === null || !isPositive(amount)) return { error: "المبلغ غير صحيح." };
+  const signedAmount = parsed.data.direction === "debit" ? negateMoney(amount) : amount;
+
+  await db.transaction(async (tx) => {
+    const { id: ledgerEntryId } = await writeLedgerEntry(tx, {
+      userId,
+      entryType: "other_adjustment",
+      amount: signedAmount,
+      description: parsed.data.description,
+      createdByUserId: actingUser!.id,
+      approvalStatus: "approved",
+      approvedByUserId: actingUser!.id,
+    });
+
+    await recordAudit(
+      {
+        userId: actingUser!.id,
+        action: "technician_ledger_entry.record_adjustment",
+        entityType: "technician_ledger_entry",
+        entityId: ledgerEntryId,
+        newValue: { userId, direction: parsed.data.direction, amount, description: parsed.data.description },
+      },
+      tx,
+    );
+  });
+
+  revalidatePath(`/finance/technicians/${userId}`);
+  return { success: true };
+}
+
 /**
  * A technician self-reports having received a payment from the company
  * (section 29) — no MANAGE_TECHNICIAN_PAYMENTS required, any logged-in

@@ -4,12 +4,14 @@ import * as React from "react";
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import { toast } from "sonner";
-import { Car, Gift, AlertTriangle, CalendarClock } from "lucide-react";
+import { Car, Gift, AlertTriangle, CalendarClock, Clock, Scale } from "lucide-react";
 import {
   recordVehicleUsageDeduction,
   recordBonus,
   recordPenalty,
   recordDailyWage,
+  recordOvertime,
+  recordAdjustment,
   type ActionState,
 } from "@/server/compensation/actions";
 import type { BonusRuleOption, PenaltyRuleOption } from "@/server/compensation/queries";
@@ -345,6 +347,160 @@ export function DailyWageDialog({ userId }: { userId: string }) {
           <div className="space-y-2">
             <Label>المهمة (اختياري)</Label>
             <JobCombobox name="jobId" />
+          </div>
+
+          {state.error && (
+            <p role="alert" className="text-sm font-medium text-destructive">
+              {state.error}
+            </p>
+          )}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              إلغاء
+            </Button>
+            <SubmitButton label="تسجيل" />
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** MANAGE_TECHNICIAN_PAYMENTS-only quick action — overtime pay (Sprint 7),
+ * hours × hourly rate, both stored on the ledger row itself. */
+export function OvertimeDialog({ userId }: { userId: string }) {
+  const [open, setOpen] = React.useState(false);
+  const action = recordOvertime.bind(null, userId);
+  const [state, formAction] = useActionState(action, initialState);
+
+  useCloseOnSuccess(state, setOpen);
+
+  const [prevState, setPrevState] = React.useState(state);
+  if (state !== prevState) {
+    setPrevState(state);
+    if (state.success) toast.success("تم تسجيل العمل الإضافي.");
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline">
+          <Clock className="size-4" />
+          عمل إضافي
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>تسجيل عمل إضافي</DialogTitle>
+        </DialogHeader>
+        <form action={formAction} className="space-y-4" noValidate>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="overtime-hours">عدد الساعات *</Label>
+              <Input
+                id="overtime-hours"
+                name="hours"
+                type="text"
+                inputMode="decimal"
+                dir="ltr"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="overtime-rate">أجر الساعة *</Label>
+              <Input
+                id="overtime-rate"
+                name="hourlyRate"
+                type="text"
+                inputMode="decimal"
+                dir="ltr"
+                required
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>المهمة (اختياري)</Label>
+            <JobCombobox name="jobId" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="overtime-notes">ملاحظات (اختياري)</Label>
+            <Textarea id="overtime-notes" name="notes" />
+          </div>
+
+          {state.error && (
+            <p role="alert" className="text-sm font-medium text-destructive">
+              {state.error}
+            </p>
+          )}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              إلغاء
+            </Button>
+            <SubmitButton label="تسجيل" />
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** MANAGE_TECHNICIAN_PAYMENTS-only quick action — a free-form ledger
+ * adjustment (Sprint 7), for a manual correction that doesn't fit any of
+ * the other, more specific quick actions above. */
+export function AdjustmentDialog({ userId }: { userId: string }) {
+  const [open, setOpen] = React.useState(false);
+  const action = recordAdjustment.bind(null, userId);
+  const [state, formAction] = useActionState(action, initialState);
+
+  useCloseOnSuccess(state, setOpen);
+
+  const [prevState, setPrevState] = React.useState(state);
+  if (state !== prevState) {
+    setPrevState(state);
+    if (state.success) toast.success("تم تسجيل التسوية.");
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline">
+          <Scale className="size-4" />
+          تسوية حساب
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>تسجيل تسوية حساب</DialogTitle>
+        </DialogHeader>
+        <form action={formAction} className="space-y-4" noValidate>
+          <div className="space-y-2">
+            <Label htmlFor="adjustment-direction">الاتجاه *</Label>
+            <Select name="direction" required defaultValue="credit">
+              <SelectTrigger id="adjustment-direction">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="credit">إضافة للحساب (لصالح الفني)</SelectItem>
+                <SelectItem value="debit">خصم من الحساب</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="adjustment-amount">المبلغ *</Label>
+            <Input
+              id="adjustment-amount"
+              name="amount"
+              type="text"
+              inputMode="decimal"
+              dir="ltr"
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="adjustment-description">وصف التسوية *</Label>
+            <Textarea id="adjustment-description" name="description" required />
           </div>
 
           {state.error && (

@@ -16,6 +16,11 @@ export const productionRequests = pgTable(
   "production_requests",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    // Sprint 7 (R1.51): human-readable number, e.g. PR-2026-0001 — the
+    // "PR" prefix and nextDocumentNumber("production_request", ...)
+    // machinery already existed (src/server/numbering.ts) but nothing
+    // ever called it; every request was identified only by its uuid.
+    requestNumber: text("request_number").notNull().unique(),
     jobId: uuid("job_id")
       .notNull()
       .references(() => jobs.id, { onDelete: "cascade" }),

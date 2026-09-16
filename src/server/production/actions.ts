@@ -20,9 +20,10 @@ import { notifyUsers } from "@/server/notifications";
 import { parseNonNegativeMoneyInput, formatILS } from "@/server/money";
 import { createApprovalRequest } from "@/server/approvals/decide";
 import { lockJobForWrite } from "@/server/jobs/locking";
-import { createProductionRequest } from "./create-request";
+import { createProductionRequest, FACTORY_LINK_VALIDITY_DAYS } from "./create-request";
 import { checkRateLimit } from "@/server/security/rate-limit";
 import { assertJobVisible } from "@/server/jobs/access";
+import { generateSecureToken } from "@/server/tokens";
 
 export interface ActionState {
   error?: string;
@@ -173,6 +174,9 @@ export async function submitFactoryPriceAction(
     .limit(1);
   if (!link) return { error: "رابط غير صالح." };
   if (link.revokedAt) return { error: "تم إلغاء هذا الرابط." };
+  if (link.expiresAt && link.expiresAt < new Date()) {
+    return { error: "انتهت صلاحية هذا الرابط." };
+  }
 
   const [request] = await db
     .select()
@@ -258,4 +262,128 @@ export async function submitFactoryPriceAction(
   revalidatePath(`/jobs/${request.jobId}`);
   revalidatePath("/production");
   return { success: true };
+}
+
+// ---------------------------------------------------------------------
+// Factory public link management (Sprint 7, S7.5) — before this, a
+// factory link's expiresAt/revokedAt columns existed but nothing in the
+// codebase ever set revokedAt, and no staff-facing action to revoke or
+// regenerate one existed at all.
+// ---------------------------------------------------------------------
+
+/** Revokes a job's currently active factory public link — e.g. it was
+ * shared with the wrong factory, or sent by mistake. Does NOT create a
+ * replacement; use regenerateFactoryLinkAction for that. */
+export async function revokeFactoryLinkAction(
+  jobId: string,
+  linkId: string,
+): Promise<ActionState> {
+  const user = await getCurrentUser();
+  if (!can(user, PERMISSIONS.CREATE_PRODUCTION_ORDER)) {
+    return { error: "لا تملك صلاحية إدارة روابط المصنع." };
+  }
+
+  const [link] = await db
+    .select({
+      id: factoryPublicLinks.id,
+      revokedAt: factoryPublicLinks.revokedAt,
+      jobId: productionRequests.jobId,
+    })
+    .from(factoryPublicLinks)
+    .innerJoin(productionRequests, eq(factoryPublicLinks.productionRequestId, productionRequests.id))
+    .where(eq(factoryPublicLinks.id, linkId))
+    .limit(1);
+  if (!link) return { error: "الرابط غير موجود." };
+  // Never trust the caller-supplied jobId over the link's own real job —
+  // the same child-entity-mismatch check this codebase applies everywhere
+  // a child row has its own authoritative parent reference.
+  if (link.jobId !== jobId) return { error: "معرّف المهمة لا يطابق هذا الرابط." };
+  const visErr = await assertJobVisible(user, link.jobId);
+  if (visErr) return { error: visErr };
+  if (link.revokedAt) return { error: "تم إلغاء هذا الرابط بالفعل." };
+
+  await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(factoryPublicLinks)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(factoryPublicLinks.id, linkId), isNull(factoryPublicLinks.revokedAt)))
+      .returning({ id: factoryPublicLinks.id });
+    if (!updated) return; // already revoked by a concurrent request — no-op, not an error
+
+    await recordAudit(
+      {
+        userId: user!.id,
+        action: "factory_public_link.revoke",
+        entityType: "factory_public_link",
+        entityId: linkId,
+        newValue: { jobId: link.jobId },
+      },
+      tx,
+    );
+  });
+
+  revalidatePath(`/jobs/${link.jobId}`);
+  revalidatePath("/production");
+  return { success: true };
+}
+
+/** Revokes the current active link (if any) and issues a brand new one —
+ * e.g. the previous link expired, or a fresh validity window is needed
+ * without re-entering the request's details. Mirrors createProductionRequest's
+ * own link-issuing logic exactly (same token generation, same validity
+ * window) rather than duplicating a second, potentially-drifting copy. */
+export async function regenerateFactoryLinkAction(
+  jobId: string,
+  productionRequestId: string,
+): Promise<SendToFactoryState> {
+  const user = await getCurrentUser();
+  if (!can(user, PERMISSIONS.CREATE_PRODUCTION_ORDER)) {
+    return { error: "لا تملك صلاحية إدارة روابط المصنع." };
+  }
+
+  const [request] = await db
+    .select({ jobId: productionRequests.jobId })
+    .from(productionRequests)
+    .where(eq(productionRequests.id, productionRequestId))
+    .limit(1);
+  if (!request) return { error: "طلب الإنتاج غير موجود." };
+  if (request.jobId !== jobId) return { error: "معرّف المهمة لا يطابق طلب الإنتاج." };
+  const visErr = await assertJobVisible(user, request.jobId);
+  if (visErr) return { error: visErr };
+
+  const token = generateSecureToken();
+  const expiresAt = new Date(Date.now() + FACTORY_LINK_VALIDITY_DAYS * 24 * 60 * 60_000);
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(factoryPublicLinks)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(factoryPublicLinks.productionRequestId, productionRequestId),
+          isNull(factoryPublicLinks.revokedAt),
+        ),
+      );
+
+    await tx.insert(factoryPublicLinks).values({
+      productionRequestId,
+      token,
+      expiresAt,
+    });
+
+    await recordAudit(
+      {
+        userId: user!.id,
+        action: "factory_public_link.regenerate",
+        entityType: "factory_public_link",
+        entityId: productionRequestId,
+        newValue: { jobId: request.jobId },
+      },
+      tx,
+    );
+  });
+
+  revalidatePath(`/jobs/${request.jobId}`);
+  revalidatePath("/production");
+  return { success: true, publicPath: `/public/pr/${token}` };
 }

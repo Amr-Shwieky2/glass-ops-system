@@ -413,6 +413,7 @@ async function main() {
   const [ahmadProdRequest] = await db
     .insert(schema.productionRequests)
     .values({
+      requestNumber: "PR-2026-0001",
       jobId: ahmadJob.id,
       requestedByUserId: mohammad.id,
       details: "زجاج كابينة 90×200 سم + ألواح درابزين 5م، زجاج مقسّى شفاف قياسي.",
@@ -670,6 +671,7 @@ async function main() {
     jobId: reemJob.id, workTypeId: workTypeByKey.storefront.id, description: "ألواح زجاج واجهة المحل", quantity: "1", unit: "job", salePrice: "6500.00", status: "ready",
   });
   const [reemProdRequest] = await db.insert(schema.productionRequests).values({
+    requestNumber: "PR-2026-0002",
     jobId: reemJob.id, requestedByUserId: mohammad.id, details: "ألواح زجاج مقسّى لواجهة المحل، 3 أقسام.",
     status: "approved", estimatedReadyDate: dateOnly(daysAgo(1)), createdAt: daysAgo(12),
   }).returning();
@@ -808,6 +810,7 @@ async function main() {
     jobId: monaJob.id, workTypeId: workTypeByKey.mirror.id, description: "مرآة حمام، حافة مشطوفة", quantity: "3", unit: "meter", salePrice: "1800.00", status: "ready",
   });
   const [monaProdRequest] = await db.insert(schema.productionRequests).values({
+    requestNumber: "PR-2026-0003",
     jobId: monaJob.id, requestedByUserId: mohammad.id, details: "مرآة حمام، حافة مشطوفة، 3 أمتار طولية.",
     status: "approved", estimatedReadyDate: dateOnly(daysAgo(1)), createdAt: daysAgo(7),
   }).returning();
@@ -1056,6 +1059,7 @@ async function main() {
     dealClosedByUserId: mohammad.id, salePriceTotal: "4200.00", createdByUserId: mohammad.id, createdAt: daysAgo(4),
   }).returning();
   const [yasminProdRequest] = await db.insert(schema.productionRequests).values({
+    requestNumber: "PR-2026-0004",
     jobId: yasminJob.id, requestedByUserId: mohammad.id,
     details: "زجاج مطبخ + لوح جانبي ثابت، زجاج مقسّى شفاف قياسي.",
     status: "submitted", estimatedReadyDate: dateOnly(daysFromNow(3)), createdAt: daysAgo(2),
@@ -1207,6 +1211,7 @@ async function main() {
   await db.insert(schema.numberSequences).values([
     { scope: "job", year: 2026, lastValue: 9 }, // JOB-2026-0001..0009 used above
     { scope: "quote", year: 2026, lastValue: 6 }, // Q-2026-0001..0006 used above
+    { scope: "production_request", year: 2026, lastValue: 4 }, // PR-2026-0001..0004 used above
   ]);
 
   console.log("Done.");

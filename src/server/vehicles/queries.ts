@@ -2,12 +2,19 @@ import "server-only";
 import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/server/db/client";
-import { vehicles, vehicleResponsibilityHistory, fuelLogs, users } from "@/server/db/schema";
-import { sumMoney, type Money } from "@/server/money";
+import {
+  vehicles,
+  vehicleResponsibilityHistory,
+  fuelLogs,
+  vehicleMaintenanceCosts,
+  users,
+} from "@/server/db/schema";
+import { sumMoney, addMoney, type Money } from "@/server/money";
 
 const responsibleUser = alias(users, "vehicle_responsible_user");
 const historyUser = alias(users, "vehicle_history_user");
 const fuelAddedByUser = alias(users, "fuel_log_added_by_user");
+const maintenanceAddedByUser = alias(users, "vehicle_maintenance_added_by_user");
 
 export interface VehicleListRow {
   id: string;
@@ -141,17 +148,50 @@ export async function getFuelLogsForVehicle(
   return rows;
 }
 
+export interface MaintenanceCost {
+  id: string;
+  vehicleId: string;
+  amount: Money;
+  category: string;
+  description: string;
+  incurredAt: string;
+  addedByUserId: string;
+  addedByUserName: string;
+  createdAt: Date;
+}
+
+/** Maintenance/other operating-cost rows for one vehicle, newest first
+ * (Sprint 7, S7.6). */
+export async function getMaintenanceCostsForVehicle(vehicleId: string): Promise<MaintenanceCost[]> {
+  return db
+    .select({
+      id: vehicleMaintenanceCosts.id,
+      vehicleId: vehicleMaintenanceCosts.vehicleId,
+      amount: vehicleMaintenanceCosts.amount,
+      category: vehicleMaintenanceCosts.category,
+      description: vehicleMaintenanceCosts.description,
+      incurredAt: vehicleMaintenanceCosts.incurredAt,
+      addedByUserId: vehicleMaintenanceCosts.addedByUserId,
+      addedByUserName: maintenanceAddedByUser.name,
+      createdAt: vehicleMaintenanceCosts.createdAt,
+    })
+    .from(vehicleMaintenanceCosts)
+    .innerJoin(maintenanceAddedByUser, eq(vehicleMaintenanceCosts.addedByUserId, maintenanceAddedByUser.id))
+    .where(eq(vehicleMaintenanceCosts.vehicleId, vehicleId))
+    .orderBy(desc(vehicleMaintenanceCosts.incurredAt), desc(vehicleMaintenanceCosts.createdAt));
+}
+
 export interface VehicleCostSummary {
   /** Sum of fuel_logs.amount for the current calendar month. */
   monthlyFuelTotal: Money;
-  /**
-   * Total running cost to date. Honestly equal to total fuel cost: this
-   * schema has no separate maintenance/other-cost table for vehicles, and
-   * nothing else in the codebase records a vehicle maintenance cost, so
-   * "Maintenance if recorded" (section 58) records nothing today — this
-   * is the correct V1 answer, not a gap.
-   */
-   totalRunningCost: Money;
+  /** Sum of vehicle_maintenance_costs.amount for the current calendar
+   * month (Sprint 7 — this used to always be "0.00", the table didn't
+   * exist). */
+  monthlyMaintenanceTotal: Money;
+  /** Total running cost to date — fuel + maintenance/other costs, both
+   * genuinely recorded now (Sprint 7; this used to equal fuel alone, with
+   * the page itself disclosing that maintenance wasn't tracked at all). */
+  totalRunningCost: Money;
 }
 
 export interface VehicleDetail {
@@ -167,6 +207,7 @@ export interface VehicleDetail {
   createdAt: Date;
   history: HistoryRow[];
   costSummary: VehicleCostSummary;
+  maintenanceCosts: MaintenanceCost[];
 }
 
 /** One vehicle's full detail view (section 58): vehicle + history + cost summary. */
@@ -191,16 +232,26 @@ export async function getVehicleDetail(vehicleId: string): Promise<VehicleDetail
 
   if (!vehicleRow) return null;
 
-  const [history, monthlyLogs, allLogs] = await Promise.all([
+  const [history, monthlyLogs, allLogs, maintenanceCosts] = await Promise.all([
     getVehicleResponsibilityHistory(vehicleId),
     getFuelLogsForVehicle(vehicleId, { month: currentMonthString() }),
     getFuelLogsForVehicle(vehicleId),
+    getMaintenanceCostsForVehicle(vehicleId),
   ]);
 
+  const currentMonth = currentMonthString();
+  const monthlyMaintenance = maintenanceCosts.filter((c) => c.incurredAt.startsWith(currentMonth));
+
+  const monthlyFuelTotal = sumMoney(monthlyLogs.map((l) => l.amount));
+  const monthlyMaintenanceTotal = sumMoney(monthlyMaintenance.map((c) => c.amount));
   const costSummary: VehicleCostSummary = {
-    monthlyFuelTotal: sumMoney(monthlyLogs.map((l) => l.amount)),
-    totalRunningCost: sumMoney(allLogs.map((l) => l.amount)),
+    monthlyFuelTotal,
+    monthlyMaintenanceTotal,
+    totalRunningCost: addMoney(
+      sumMoney(allLogs.map((l) => l.amount)),
+      sumMoney(maintenanceCosts.map((c) => c.amount)),
+    ),
   };
 
-  return { ...vehicleRow, history, costSummary };
+  return { ...vehicleRow, history, costSummary, maintenanceCosts };
 }

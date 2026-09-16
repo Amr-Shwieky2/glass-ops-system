@@ -391,6 +391,7 @@ export async function deleteJobItem(
 const AssignmentSchema = z.object({
   userId: z.string().uuid().optional(),
   externalContractorId: z.string().uuid().optional(),
+  jobItemId: z.string().uuid().optional(),
   role: z.string().trim().optional(),
 });
 
@@ -411,6 +412,7 @@ export async function assignToJob(
     externalContractorId: emptyToUndefined(
       formData.get("externalContractorId"),
     ),
+    jobItemId: emptyToUndefined(formData.get("jobItemId")),
     role: emptyToUndefined(formData.get("role")),
   });
   if (!parsed.success) return { error: "بيانات غير صحيحة" };
@@ -418,10 +420,26 @@ export async function assignToJob(
     return { error: "اختر فنياً أو مقاولاً خارجياً" };
   }
 
+  // Sprint 7 (R1.22): item-level assignment — never trust a caller-
+  // supplied jobItemId without verifying it actually belongs to THIS job,
+  // the same "child must belong to the referenced parent" rule the
+  // job-scoped/child-entity authorization audit applied everywhere else
+  // (see src/server/jobs/access.ts and this file's deleteJobItem).
+  if (parsed.data.jobItemId) {
+    const [item] = await db
+      .select({ jobId: jobItems.jobId })
+      .from(jobItems)
+      .where(eq(jobItems.id, parsed.data.jobItemId))
+      .limit(1);
+    if (!item) return { error: "البند غير موجود." };
+    if (item.jobId !== jobId) return { error: "هذا البند لا ينتمي إلى هذه المهمة." };
+  }
+
   await db.insert(jobAssignments).values({
     jobId,
     userId: parsed.data.userId,
     externalContractorId: parsed.data.externalContractorId,
+    jobItemId: parsed.data.jobItemId,
     role: parsed.data.role,
     createdByUserId: user!.id,
   });

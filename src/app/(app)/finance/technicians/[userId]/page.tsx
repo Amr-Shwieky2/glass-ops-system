@@ -37,7 +37,14 @@ import {
 import { cn } from "@/lib/utils";
 import { ReportPaymentDialog } from "../report-payment-dialog";
 import { LedgerDecisionButtons } from "../ledger-decision-buttons";
-import { VehicleDeductionDialog, BonusDialog, PenaltyDialog, DailyWageDialog } from "../quick-action-dialogs";
+import {
+  VehicleDeductionDialog,
+  BonusDialog,
+  PenaltyDialog,
+  DailyWageDialog,
+  OvertimeDialog,
+  AdjustmentDialog,
+} from "../quick-action-dialogs";
 import { ReportFieldExpenseDialog } from "../report-field-expense-dialog";
 import { FieldExpenseDecisionButtons } from "../field-expense-decision-buttons";
 import { DirectionFilterSelect } from "./direction-filter-select";
@@ -62,6 +69,7 @@ const ENTRY_TYPE_LABEL_AR: Record<string, string> = {
   vehicle_usage_deduction: "خصم استخدام مركبة",
   payment_made: "دفعة مستلمة",
   other_adjustment: "تسوية أخرى",
+  overtime: "عمل إضافي",
 };
 
 const APPROVAL_STATUS_LABEL_AR: Record<string, string> = {
@@ -224,6 +232,8 @@ export default async function TechnicianLedgerPage({
                 <BonusDialog userId={userId} bonusRules={bonusRules} />
                 <PenaltyDialog userId={userId} penaltyRules={penaltyRules} />
                 <DailyWageDialog userId={userId} />
+                <OvertimeDialog userId={userId} />
+                <AdjustmentDialog userId={userId} />
               </>
             )}
           </div>

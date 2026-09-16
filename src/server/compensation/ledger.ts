@@ -13,7 +13,8 @@ export type LedgerEntryType =
   | "fuel_reimbursement"
   | "vehicle_usage_deduction"
   | "payment_made"
-  | "other_adjustment";
+  | "other_adjustment"
+  | "overtime";
 
 export type LaborCostCategory = "installer_labor" | "daily_worker_labor";
 

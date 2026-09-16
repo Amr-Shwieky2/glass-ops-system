@@ -4,6 +4,14 @@ import { productionRequests, factoryPublicLinks } from "@/server/db/schema";
 import { advanceJobStatus } from "@/server/jobs/status";
 import { recordAudit } from "@/server/audit";
 import { generateSecureToken } from "@/server/tokens";
+import { nextDocumentNumber } from "@/server/numbering";
+
+/** Sprint 7 (S7.5) — how long a freshly-created factory public link stays
+ * valid before requiring staff to explicitly regenerate it (see
+ * regenerateFactoryLinkAction in src/server/production/actions.ts). Same
+ * order of magnitude as a quote's own validity window (quote_validity_days
+ * setting, default 14) — a factory doesn't need months to submit a price. */
+export const FACTORY_LINK_VALIDITY_DAYS = 30;
 
 export interface CreateProductionRequestParams {
   jobId: string;
@@ -33,9 +41,12 @@ export async function createProductionRequest(
   tx: Database,
   params: CreateProductionRequestParams,
 ): Promise<CreateProductionRequestResult> {
+  const requestNumber = await nextDocumentNumber("production_request", tx);
+
   const [request] = await tx
     .insert(productionRequests)
     .values({
+      requestNumber,
       jobId: params.jobId,
       requestedByUserId: params.requestedByUserId,
       details: params.details,
@@ -44,9 +55,11 @@ export async function createProductionRequest(
     .returning();
 
   const token = generateSecureToken();
+  const expiresAt = new Date(Date.now() + FACTORY_LINK_VALIDITY_DAYS * 24 * 60 * 60_000);
   await tx.insert(factoryPublicLinks).values({
     productionRequestId: request.id,
     token,
+    expiresAt,
   });
 
   await advanceJobStatus(tx, params.jobId, "in_production");

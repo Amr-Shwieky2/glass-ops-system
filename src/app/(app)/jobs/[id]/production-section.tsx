@@ -9,6 +9,7 @@ import { PRODUCTION_STATUS_LABEL, productionStatusVariant } from "@/lib/producti
 import { SendToFactoryDialog } from "./send-to-factory-dialog";
 import { ShowFactoryLinkButton } from "./show-factory-link-button";
 import { FactoryDecisionButtons } from "./factory-decision-buttons";
+import { FactoryLinkManageButtons } from "./factory-link-manage-buttons";
 
 const dateFmt = new Intl.DateTimeFormat("ar", {
   year: "numeric",
@@ -75,9 +76,14 @@ export function ProductionSection({
           <Factory className="size-5 text-muted-foreground" />
           الإنتاج والمصنع
           {request && (
-            <Badge variant={productionStatusVariant(request.status)}>
-              {PRODUCTION_STATUS_LABEL[request.status] ?? request.status}
-            </Badge>
+            <>
+              <span dir="ltr" className="text-sm font-normal text-muted-foreground">
+                {request.requestNumber}
+              </span>
+              <Badge variant={productionStatusVariant(request.status)}>
+                {PRODUCTION_STATUS_LABEL[request.status] ?? request.status}
+              </Badge>
+            </>
           )}
         </CardTitle>
         {canCreateProductionOrder && (
@@ -106,8 +112,18 @@ export function ProductionSection({
               </p>
             </div>
 
-            {request.activeLink && (canCreateProductionOrder || canApproveFactoryPrice) && (
-              <ShowFactoryLinkButton token={request.activeLink.token} />
+            {(request.activeLink || canCreateProductionOrder) &&
+              (canCreateProductionOrder || canApproveFactoryPrice) && (
+              <div className="flex flex-wrap items-center gap-2">
+                {request.activeLink && <ShowFactoryLinkButton token={request.activeLink.token} />}
+                {canCreateProductionOrder && (
+                  <FactoryLinkManageButtons
+                    jobId={jobId}
+                    linkId={request.activeLink?.id ?? null}
+                    productionRequestId={request.id}
+                  />
+                )}
+              </div>
             )}
 
             {latest && (

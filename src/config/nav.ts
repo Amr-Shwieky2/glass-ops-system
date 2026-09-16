@@ -8,6 +8,7 @@ import {
   FileText,
   Factory,
   Wrench,
+  HardHat,
   Truck,
   Wallet,
   CheckSquare,
@@ -78,6 +79,12 @@ export const NAV_ITEMS: NavItem[] = [
     label: "الإصلاحات (تيكون)",
     icon: Wrench,
     permission: PERMISSIONS.CREATE_REPAIR,
+  },
+  {
+    href: "/contractors",
+    label: "المقاولون الخارجيون",
+    icon: HardHat,
+    permission: PERMISSIONS.ASSIGN_INSTALLER,
   },
   {
     href: "/vehicles",

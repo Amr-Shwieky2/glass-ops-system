@@ -191,6 +191,16 @@ export default async function PublicProductionRequestPage({
     );
   }
 
+  if (data.isExpired) {
+    return (
+      <StatusNotice
+        icon={Clock}
+        title="انتهت صلاحية هذا الرابط"
+        description="تواصل معنا للحصول على رابط جديد لإرسال السعر."
+      />
+    );
+  }
+
   if (data.request.status === "approved") {
     return (
       <div className="space-y-6">

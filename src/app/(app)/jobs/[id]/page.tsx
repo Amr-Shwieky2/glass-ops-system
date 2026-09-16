@@ -221,6 +221,12 @@ export default async function JobDetailPage({
 
   const defaultValidUntil = defaultQuoteValidUntil(quoteValidityDays);
 
+  // Sprint 7 (R1.22) — item-level assignment display: a Map, not a lookup
+  // re-derived per row, since the assignments list can be long.
+  const jobItemLabelById = new Map(
+    job.items.map((item) => [item.id, item.workTypeLabelAr || item.description || "بند عمل"]),
+  );
+
   const itemsTotal = job.items.length
     ? sumMoney(job.items.map((i) => i.salePrice ?? "0"))
     : null;
@@ -526,6 +532,10 @@ export default async function JobDetailPage({
               jobId={job.id}
               assignableUsers={assignableUsers}
               externalContractors={externalContractors}
+              jobItems={job.items.map((item) => ({
+                id: item.id,
+                label: item.workTypeLabelAr || item.description || "بند عمل",
+              }))}
             />
           )}
         </CardHeader>
@@ -540,6 +550,11 @@ export default async function JobDetailPage({
                     <p className="font-medium text-foreground">
                       {a.userName ?? a.externalContractorName}
                     </p>
+                    {a.jobItemId && (
+                      <p className="text-sm text-muted-foreground">
+                        بند: {jobItemLabelById.get(a.jobItemId) ?? "—"}
+                      </p>
+                    )}
                     {a.role && <p className="text-sm text-muted-foreground">{a.role}</p>}
                   </div>
                   {canAssign && (

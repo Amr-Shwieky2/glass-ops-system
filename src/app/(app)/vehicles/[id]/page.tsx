@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Wallet2, History, Fuel } from "lucide-react";
+import { ArrowLeft, Wallet2, History, Fuel, Wrench } from "lucide-react";
 import { getCurrentUser } from "@/server/auth/session";
 import { can, canAny } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
@@ -15,8 +15,17 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FUEL_TYPE_LABEL_AR } from "../fuel-type";
 import { AddFuelDialog } from "../add-fuel-dialog";
+import { AddMaintenanceCostDialog } from "../add-maintenance-cost-dialog";
 import { EditVehicleDialog } from "./edit-vehicle-dialog";
 import { AssignResponsibilityDialog } from "./assign-responsibility-dialog";
+
+const MAINTENANCE_CATEGORY_LABEL_AR: Record<string, string> = {
+  maintenance: "صيانة",
+  insurance: "تأمين",
+  registration: "ترخيص",
+  tires: "إطارات",
+  other: "أخرى",
+};
 
 const dateFmt = new Intl.DateTimeFormat("ar", {
   year: "numeric",
@@ -104,6 +113,7 @@ export default async function VehicleDetailPage({
                 }
               />
             )}
+            {canManage && <AddMaintenanceCostDialog vehicleId={vehicle.id} />}
           </div>
         </div>
       </div>
@@ -116,11 +126,17 @@ export default async function VehicleDetailPage({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-4">
             <div>
               <p className="text-muted-foreground">وقود هذا الشهر</p>
               <p dir="ltr" className="text-end text-xl font-bold text-foreground">
                 {formatILS(vehicle.costSummary.monthlyFuelTotal)}
+              </p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">صيانة وتكاليف أخرى هذا الشهر</p>
+              <p dir="ltr" className="text-end text-xl font-bold text-foreground">
+                {formatILS(vehicle.costSummary.monthlyMaintenanceTotal)}
               </p>
             </div>
             <div>
@@ -137,8 +153,7 @@ export default async function VehicleDetailPage({
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            إجمالي تكلفة التشغيل يشمل الوقود فقط حالياً — لا يوجد سجل صيانة أو تكاليف أخرى
-            للمركبات في النظام بعد.
+            إجمالي تكلفة التشغيل = الوقود + الصيانة والتكاليف الأخرى المسجّلة أدناه.
           </p>
           {vehicle.notes && (
             <p className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
@@ -212,6 +227,39 @@ export default async function VehicleDetailPage({
                     </p>
                   )}
                   {log.notes && <p className="text-sm text-muted-foreground">{log.notes}</p>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Wrench className="size-5 text-muted-foreground" />
+            الصيانة والتكاليف الأخرى
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {vehicle.maintenanceCosts.length === 0 ? (
+            <EmptyState title="لا توجد تكاليف صيانة مسجلة" className="border-0 p-6" />
+          ) : (
+            <ul className="divide-y">
+              {vehicle.maintenanceCosts.map((cost) => (
+                <li key={cost.id} className="space-y-1 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-medium text-foreground">
+                      {MAINTENANCE_CATEGORY_LABEL_AR[cost.category] ?? cost.category}
+                    </span>
+                    <span dir="ltr" className="text-end font-medium text-foreground">
+                      {formatILS(cost.amount)}
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{cost.description}</p>
+                  <p dir="ltr" className="text-end text-sm text-muted-foreground">
+                    {cost.addedByUserName} · {dateFmt.format(new Date(`${cost.incurredAt}T00:00:00`))}
+                  </p>
                 </li>
               ))}
             </ul>

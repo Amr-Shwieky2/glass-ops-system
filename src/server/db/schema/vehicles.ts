@@ -108,3 +108,34 @@ export const fuelLogs = pgTable(
     index("fuel_logs_logged_at_idx").on(t.loggedAt),
   ],
 );
+
+/**
+ * Non-fuel vehicle operating costs (Sprint 7, S7.6) — maintenance,
+ * repairs, insurance, registration, tires, and anything else that isn't a
+ * fuel_logs row. Before this table existed, the vehicle detail page's own
+ * "ملخص التكاليف" card said outright that total running cost only
+ * included fuel, because nothing else was ever recorded anywhere.
+ */
+export const vehicleMaintenanceCosts = pgTable(
+  "vehicle_maintenance_costs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    vehicleId: uuid("vehicle_id")
+      .notNull()
+      .references(() => vehicles.id, { onDelete: "restrict" }),
+    amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+    category: text("category").notNull(), // e.g. 'maintenance' | 'insurance' | 'registration' | 'other' — free text, display only, mirrors externalContractors.serviceType's own convention
+    description: text("description").notNull(),
+    incurredAt: date("incurred_at").notNull(),
+    addedByUserId: uuid("added_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("vehicle_maintenance_costs_vehicle_idx").on(t.vehicleId),
+    index("vehicle_maintenance_costs_incurred_at_idx").on(t.incurredAt),
+  ],
+);

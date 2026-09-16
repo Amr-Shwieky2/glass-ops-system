@@ -102,6 +102,10 @@ export const ledgerEntryTypeEnum = pgEnum("ledger_entry_type", [
   "vehicle_usage_deduction",
   "payment_made",
   "other_adjustment",
+  // Sprint 7: technician adjustment workflows — 'overtime' was named
+  // explicitly and had no enum value at all (unlike fuel_reimbursement/
+  // other_adjustment, which existed but had zero writer anywhere).
+  "overtime",
 ]);
 
 export const cashAccountOwnerTypeEnum = pgEnum("cash_account_owner_type", [

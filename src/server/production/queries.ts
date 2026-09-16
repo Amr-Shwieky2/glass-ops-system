@@ -23,6 +23,7 @@ export async function getProductionRequestForJob(jobId: string) {
   const [request] = await db
     .select({
       id: productionRequests.id,
+      requestNumber: productionRequests.requestNumber,
       jobId: productionRequests.jobId,
       requestedByUserId: productionRequests.requestedByUserId,
       requestedByName: users.name,
@@ -214,6 +215,11 @@ export async function getProductionRequestByPublicToken(token: string) {
     submissions,
     latestSubmission: submissions[0] ?? null,
     isRevoked: link.revokedAt !== null,
+    // Sprint 7 (S7.5) — expiresAt existed on the schema with nothing ever
+    // checking it (the public lookup/submission path only ever checked
+    // revokedAt). A null expiresAt (a link created before this sprint)
+    // never expires, matching quote links' own "null = no expiry" posture.
+    isExpired: link.expiresAt !== null && link.expiresAt < new Date(),
     items: itemRows as PublicFactoryJobItem[],
     measurements: measurementsWithAttachments,
   };
@@ -261,7 +267,11 @@ export async function listProductionRequests(params: ListProductionRequestsParam
   if (term) {
     const pattern = `%${term}%`;
     conditions.push(
-      or(ilike(jobs.jobNumber, pattern), ilike(customers.name, pattern))!,
+      or(
+        ilike(jobs.jobNumber, pattern),
+        ilike(customers.name, pattern),
+        ilike(productionRequests.requestNumber, pattern),
+      )!,
     );
   }
   if (status && isFactoryStatus(status)) {
@@ -273,6 +283,7 @@ export async function listProductionRequests(params: ListProductionRequestsParam
     db
       .select({
         id: productionRequests.id,
+        requestNumber: productionRequests.requestNumber,
         jobId: productionRequests.jobId,
         jobNumber: jobs.jobNumber,
         customerName: customers.name,

@@ -100,6 +100,7 @@ export default async function ProductionPage({
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>رقم الطلب</TableHead>
                   <TableHead>رقم المهمة</TableHead>
                   <TableHead>العميل</TableHead>
                   <TableHead>الحالة</TableHead>
@@ -111,6 +112,9 @@ export default async function ProductionPage({
               <TableBody>
                 {rows.map((row) => (
                   <TableRow key={row.id}>
+                    <TableCell dir="ltr" className="text-end text-muted-foreground">
+                      {row.requestNumber}
+                    </TableCell>
                     <TableCell className="font-medium text-foreground">
                       <Link href={`/jobs/${row.jobId}`} className="hover:underline">
                         {row.jobNumber}
