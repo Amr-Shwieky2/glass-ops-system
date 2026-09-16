@@ -55,6 +55,16 @@ export async function GET(
   if (!link || link.revokedAt) {
     return NextResponse.json({ error: "رابط غير صالح." }, { status: 404 });
   }
+  // Every other consumer of factoryPublicLinks (submitFactoryPriceAction,
+  // getProductionRequestByPublicToken) treats expiresAt as a hard cutoff —
+  // this route was the one place that didn't, letting an attachment URL
+  // someone had already seen (a factory's email, browser history, a
+  // forwarded link) keep serving a customer's measurement photos/PDFs
+  // indefinitely past the link's normal 30-day validity window, with no
+  // explicit revoke ever required.
+  if (link.expiresAt && link.expiresAt < new Date()) {
+    return NextResponse.json({ error: "انتهت صلاحية هذا الرابط." }, { status: 404 });
+  }
 
   const [request] = await db
     .select({ jobId: productionRequests.jobId })

@@ -11,6 +11,7 @@ import {
   approvalRequests,
   jobAssignments,
   jobs,
+  jobStatuses,
   users,
   userPermissions,
 } from "@/server/db/schema";
@@ -35,6 +36,27 @@ async function getUsersWithPermission(permissionKey: PermissionKey) {
         isNull(users.deletedAt),
       ),
     );
+}
+
+/** Whether `jobId`'s current status is terminal (completed/cancelled) —
+ * checked by both approveFactorySubmission and rejectFactorySubmission
+ * below, neither of which used to check this at all: approving a
+ * factory price on an already-closed job silently booked a brand new
+ * approved job_costs row against it (retroactively changing a
+ * financially-reconciled job's cost/profit/commission figures with no
+ * visible status change to alert anyone — advanceJobStatus's own
+ * forward-only sort_order check happens to keep the STATUS from
+ * regressing, but says nothing about the cost row already committed
+ * before it's even called). Mirrors closeJobAction's/sendToFactoryAction's
+ * own terminal-state guard. */
+async function isJobTerminal(jobId: string): Promise<boolean> {
+  const [job] = await db
+    .select({ isTerminal: jobStatuses.isTerminal })
+    .from(jobs)
+    .innerJoin(jobStatuses, eq(jobs.statusId, jobStatuses.id))
+    .where(eq(jobs.id, jobId))
+    .limit(1);
+  return job?.isTerminal ?? false;
 }
 
 /**
@@ -123,6 +145,9 @@ export async function approveFactorySubmission(
   // one, so a genuine bug surfaces instead of being masked.
   if (request.jobId !== jobId) {
     return { error: "معرّف المهمة لا يطابق طلب الإنتاج." };
+  }
+  if (await isJobTerminal(request.jobId)) {
+    return { error: "لا يمكن اعتماد سعر مصنع على مهمة مغلقة." };
   }
 
   // No requester-vs-approver check here, deliberately: the submitted PRICE
@@ -288,6 +313,9 @@ export async function rejectFactorySubmission(
   // own request.jobId is authoritative, never the caller-supplied jobId.
   if (request.jobId !== jobId) {
     return { error: "معرّف المهمة لا يطابق طلب الإنتاج." };
+  }
+  if (await isJobTerminal(request.jobId)) {
+    return { error: "لا يمكن رفض سعر مصنع على مهمة مغلقة." };
   }
 
   // No requester-vs-approver check here — see the matching comment in

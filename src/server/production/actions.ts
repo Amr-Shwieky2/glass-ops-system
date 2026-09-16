@@ -191,7 +191,40 @@ export async function submitFactoryPriceAction(
     return { error: "هناك عرض سعر مُرسل بالفعل بانتظار المراجعة." };
   }
 
+  let result: ActionState = { success: true };
   await db.transaction(async (tx) => {
+    // Re-check status INSIDE the transaction under a row lock — the plain
+    // SELECT above is just a fast-fail for the common case, not the real
+    // guard. This is a PUBLIC, unauthenticated endpoint (a network retry
+    // or two browser tabs on the same token both count), and unlike every
+    // other check-then-act write in this codebase (sendToFactoryAction/
+    // convertQuoteToJob/signQuotePublicly all lock; the approval-decision
+    // actions all use a conditional UPDATE...WHERE status='pending' guard)
+    // this one previously had no lock at all — two concurrent submissions
+    // could both pass the check above before either committed, leaving two
+    // independent 'pending' factorySubmissions rows for one request, each
+    // independently approvable (approveFactorySubmission only checks the
+    // individual submission's own status) into its own job_costs row —
+    // silently double-booking the factory cost on the job.
+    const [locked] = await tx
+      .select({ status: productionRequests.status })
+      .from(productionRequests)
+      .where(eq(productionRequests.id, request.id))
+      .for("update")
+      .limit(1);
+    if (!locked) {
+      result = { error: "تعذر العثور على طلب الإنتاج." };
+      return;
+    }
+    if (locked.status === "approved") {
+      result = { error: "تم اعتماد سعر لهذا الطلب بالفعل." };
+      return;
+    }
+    if (locked.status === "submitted") {
+      result = { error: "هناك عرض سعر مُرسل بالفعل بانتظار المراجعة." };
+      return;
+    }
+
     const [submission] = await tx
       .insert(factorySubmissions)
       .values({
@@ -246,6 +279,7 @@ export async function submitFactoryPriceAction(
       tx,
     );
   });
+  if (result.error) return result;
 
   const approvers = await getUsersWithPermission(PERMISSIONS.APPROVE_FACTORY_PRICE);
   await notifyUsers(

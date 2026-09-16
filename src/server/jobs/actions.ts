@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import {
   jobs,
@@ -533,6 +533,21 @@ export async function cancelJob(
   if (visErr) return { error: visErr };
   const reason = emptyToUndefined(formData.get("reason"));
 
+  // Mirrors closeJobAction's own terminal-state guard (src/server/jobs/
+  // close.ts) — this action previously had none at all, so a completed
+  // (fully-paid, closed) or already-cancelled job could be silently
+  // re-stamped to 'cancelled', overwriting closedAt and pulling it out of
+  // the 'completed' revenue/report bucket while its payments/commission
+  // ledger entries stayed intact, corrupting reporting with no trace.
+  const [job] = await db
+    .select({ statusId: jobs.statusId, isTerminal: jobStatuses.isTerminal })
+    .from(jobs)
+    .innerJoin(jobStatuses, eq(jobs.statusId, jobStatuses.id))
+    .where(eq(jobs.id, jobId))
+    .limit(1);
+  if (!job) return { error: "المهمة غير موجودة" };
+  if (job.isTerminal) return { error: "هذه المهمة مغلقة بالفعل." };
+
   const [cancelledStatus] = await db
     .select({ id: jobStatuses.id })
     .from(jobStatuses)
@@ -545,7 +560,11 @@ export async function cancelJob(
     ? `[${cancelNoteTimestampFmt.format(now)}] ${user!.name} (إلغاء المهمة): ${reason}`
     : undefined;
 
-  await db
+  // Conditional on the status observed above (same race guard as
+  // closeJobAction's own UPDATE ... WHERE status_id = ?) — if a
+  // concurrent request already moved the job off that status, this
+  // affects zero rows instead of overwriting whatever it became.
+  const [updated] = await db
     .update(jobs)
     .set({
       statusId: cancelledStatus.id,
@@ -555,7 +574,9 @@ export async function cancelJob(
       closedAt: now,
       updatedAt: now,
     })
-    .where(eq(jobs.id, jobId));
+    .where(and(eq(jobs.id, jobId), eq(jobs.statusId, job.statusId)))
+    .returning({ id: jobs.id });
+  if (!updated) return { error: "هذه المهمة مغلقة بالفعل." };
 
   await recordAudit({
     userId: user!.id,

@@ -39,7 +39,15 @@ nothing here depends on a third-party service.
    `POSTGRES_PASSWORD`, and `POSTGRES_DB` — the credentials the Compose
    Postgres container initializes itself with. The app container's own
    `DATABASE_URL` is assembled automatically from these three by
-   `docker-compose.yml`; nothing else needs to be set by hand.
+   `docker-compose.yml`.
+
+   Also set a real, random `SCHEDULER_SECRET` (e.g. `openssl rand -base64
+   32`) — never leave it as the placeholder `change-me-too`. This is the
+   shared secret between the `app` and `scheduler` services (see step 4
+   below); `app` refuses every request to its internal scheduler endpoint
+   with a 503 if this is left unset, but an unchanged, publicly-known
+   placeholder value is just as bad as unset — anyone who has read this
+   file could authenticate against it.
 
    This is deliberately a separate file from `.env` (used by local,
    non-Docker development — see `.env.example`), and every command below
@@ -64,18 +72,21 @@ nothing here depends on a third-party service.
    docker compose --env-file .env.docker up -d
    ```
 
-   This starts Postgres (in a named volume, so data survives container
-   restarts and rebuilds) and the application. Postgres is not exposed to
-   the host — the application reaches it only over the Compose-internal
-   network, by service name. This is intentional: there's no reason for
-   the database port to be reachable from outside the stack in a normal
-   deployment.
-
-   There is no separate worker container for scheduled notification
-   sweeps yet — `docker-compose.yml` only defines `postgres` and `app`.
-   Nothing in the current codebase implements a scheduled sweep to run, so
-   this remains a documented gap for a future phase rather than a service
-   that would start and do nothing.
+   This starts three services: Postgres (in a named volume, so data
+   survives container restarts and rebuilds), the application, and
+   `scheduler` — a worker that polls the app's own internal
+   `/api/internal/scheduler` endpoint on a fixed interval
+   (`SCHEDULER_INTERVAL_SECONDS`, default 300s) to fire due measurement/
+   installation reminders, check-due-soon notices, stale-repair alerts,
+   and the other scheduled conditions (`src/server/scheduler/
+   conditions.ts`). It builds from the exact same image as `app` (no
+   separate dependency, no second build stage) and authenticates to `app`
+   using the `SCHEDULER_SECRET` set in step 2 — without a real secret
+   there, `app` refuses every scheduler request with a 503. Postgres is
+   not exposed to the host — the application reaches it only over the
+   Compose-internal network, by service name. This is intentional:
+   there's no reason for the database port to be reachable from outside
+   the stack in a normal deployment.
 
 5. **Migrations run automatically.** The `app` container's entrypoint runs
    `drizzle-kit migrate` against the database before starting the Next.js
@@ -150,6 +161,7 @@ nothing here depends on a third-party service.
 docker compose --env-file .env.docker logs -f            # all services
 docker compose --env-file .env.docker logs -f app        # just the application
 docker compose --env-file .env.docker logs -f postgres   # just the database
+docker compose --env-file .env.docker logs -f scheduler  # just the reminder-sweep worker
 ```
 
 ### Stopping and restarting

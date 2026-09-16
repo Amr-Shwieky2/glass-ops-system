@@ -600,6 +600,7 @@ export default async function JobDetailPage({
           paymentStatus={paymentStatus}
           canCollectPayment={canCollectPayment}
           canApprovePayment={canApprovePayment}
+          canViewSalePrice={canViewSalePrice}
           currentUserId={user!.id}
           isSuperAdminUser={isSuperAdmin(user)}
         />

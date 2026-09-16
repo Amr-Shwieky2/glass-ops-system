@@ -10,7 +10,9 @@ CREATE TABLE "vehicle_maintenance_costs" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "production_requests" ADD COLUMN "request_number" text NOT NULL;--> statement-breakpoint
+ALTER TABLE "production_requests" ADD COLUMN "request_number" text;--> statement-breakpoint
+UPDATE "production_requests" SET "request_number" = 'PR-LEGACY-' || substr("id"::text, 1, 8) WHERE "request_number" IS NULL;--> statement-breakpoint
+ALTER TABLE "production_requests" ALTER COLUMN "request_number" SET NOT NULL;--> statement-breakpoint
 ALTER TABLE "vehicle_maintenance_costs" ADD CONSTRAINT "vehicle_maintenance_costs_vehicle_id_vehicles_id_fk" FOREIGN KEY ("vehicle_id") REFERENCES "public"."vehicles"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "vehicle_maintenance_costs" ADD CONSTRAINT "vehicle_maintenance_costs_added_by_user_id_users_id_fk" FOREIGN KEY ("added_by_user_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "vehicle_maintenance_costs_vehicle_idx" ON "vehicle_maintenance_costs" USING btree ("vehicle_id");--> statement-breakpoint

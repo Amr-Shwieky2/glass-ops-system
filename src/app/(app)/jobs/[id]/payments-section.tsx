@@ -53,6 +53,7 @@ export function PaymentsSection({
   paymentStatus,
   canCollectPayment,
   canApprovePayment,
+  canViewSalePrice,
   currentUserId,
   isSuperAdminUser,
 }: {
@@ -62,10 +63,21 @@ export function PaymentsSection({
   paymentStatus: PaymentStatus | null;
   canCollectPayment: boolean;
   canApprovePayment: boolean;
+  /** A COLLECT_PAYMENT-only holder (e.g. an installer) has a genuine
+   * operational need to see the remaining balance — it's how much to
+   * collect on site — but showing that ALONGSIDE the total already
+   * collected lets them trivially back out the exact sale price by
+   * addition, defeating VIEW_SALE_PRICE's entire purpose. So "المتبقي"
+   * stays visible to any canCollectPayment holder, while "المحصَّل" and
+   * the itemized payment list (whose amounts sum to the same figure) are
+   * gated behind canViewSalePrice — or canApprovePayment, since deciding
+   * a pending payment inherently requires seeing its amount. */
+  canViewSalePrice: boolean;
   currentUserId: string;
   isSuperAdminUser: boolean;
 }) {
   const { payments, totalApproved, remaining } = paymentsResult;
+  const canViewPaymentAmounts = canViewSalePrice || canApprovePayment;
 
   return (
     <Card>
@@ -90,12 +102,14 @@ export function PaymentsSection({
           />
         ) : (
           <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <p className="text-muted-foreground">المحصَّل</p>
-              <p dir="ltr" className="text-end text-xl font-bold text-foreground">
-                {formatILS(totalApproved)}
-              </p>
-            </div>
+            {canViewPaymentAmounts && (
+              <div>
+                <p className="text-muted-foreground">المحصَّل</p>
+                <p dir="ltr" className="text-end text-xl font-bold text-foreground">
+                  {formatILS(totalApproved)}
+                </p>
+              </div>
+            )}
             <div>
               <p className="text-muted-foreground">المتبقي</p>
               <p dir="ltr" className="text-end text-xl font-bold text-foreground">
@@ -105,38 +119,39 @@ export function PaymentsSection({
           </div>
         )}
 
-        {payments.length === 0 ? (
-          <EmptyState title="لم يتم تسجيل أي دفعة بعد" className="border-0 p-6" />
-        ) : (
-          <ul className="divide-y">
-            {payments.map((p) => (
-              <li key={p.id} className="space-y-2 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span dir="ltr" className="font-medium text-foreground">
-                        {formatILS(p.amount)}
-                      </span>
-                      <Badge variant={APPROVAL_STATUS_VARIANT[p.approvalStatus] ?? "outline"}>
-                        {APPROVAL_STATUS_LABEL_AR[p.approvalStatus] ?? p.approvalStatus}
-                      </Badge>
+        {canViewPaymentAmounts &&
+          (payments.length === 0 ? (
+            <EmptyState title="لم يتم تسجيل أي دفعة بعد" className="border-0 p-6" />
+          ) : (
+            <ul className="divide-y">
+              {payments.map((p) => (
+                <li key={p.id} className="space-y-2 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span dir="ltr" className="font-medium text-foreground">
+                          {formatILS(p.amount)}
+                        </span>
+                        <Badge variant={APPROVAL_STATUS_VARIANT[p.approvalStatus] ?? "outline"}>
+                          {APPROVAL_STATUS_LABEL_AR[p.approvalStatus] ?? p.approvalStatus}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {PAYMENT_METHOD_LABEL_AR[p.method] ?? p.method} · بواسطة{" "}
+                        {p.receivedByUserName} · {dateFmt.format(new Date(p.paymentDate))}
+                      </p>
+                      {p.notes && <p className="text-sm text-muted-foreground">{p.notes}</p>}
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      {PAYMENT_METHOD_LABEL_AR[p.method] ?? p.method} · بواسطة{" "}
-                      {p.receivedByUserName} · {dateFmt.format(new Date(p.paymentDate))}
-                    </p>
-                    {p.notes && <p className="text-sm text-muted-foreground">{p.notes}</p>}
                   </div>
-                </div>
-                {p.approvalStatus === "pending" &&
-                  canApprovePayment &&
-                  (isSuperAdminUser || p.createdByUserId !== currentUserId) && (
-                  <PaymentDecisionButtons paymentId={p.id} amount={p.amount} />
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+                  {p.approvalStatus === "pending" &&
+                    canApprovePayment &&
+                    (isSuperAdminUser || p.createdByUserId !== currentUserId) && (
+                    <PaymentDecisionButtons paymentId={p.id} amount={p.amount} />
+                  )}
+                </li>
+              ))}
+            </ul>
+          ))}
       </CardContent>
     </Card>
   );
