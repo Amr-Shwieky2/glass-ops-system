@@ -11,6 +11,7 @@ import {
 import type { QuoteLanguage } from "@/lib/quote-i18n";
 import { nextDocumentNumber } from "@/server/numbering";
 import { multiplyMoney, sumMoney, type Money } from "@/server/money";
+import { addCompanyDays } from "@/lib/company-day";
 
 export interface QuoteItemInput {
   workTypeId?: string;
@@ -58,7 +59,7 @@ export interface CreateQuoteVersionResult {
  * hook function bodies directly — there's no actual purity concern here,
  * this runs once per request on the server, not in a memoized client render. */
 export function defaultQuoteValidUntil(validityDays: number): string {
-  return new Date(Date.now() + validityDays * 86_400_000).toISOString().slice(0, 10);
+  return addCompanyDays(validityDays);
 }
 
 /**

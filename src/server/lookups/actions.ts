@@ -74,7 +74,7 @@ const CreateJobStatusSchema = z.object({
   labelEn: z.string().trim().min(1, { error: "التسمية بالإنجليزية مطلوبة" }),
   labelAr: z.string().trim().min(1, { error: "التسمية بالعربية مطلوبة" }),
   sortOrder: z.string().trim().min(1, { error: "ترتيب العرض مطلوب" }),
-  isTerminal: z.enum(["true", "false"]),
+  isTerminal: z.enum(["true", "false"], { error: "قيمة غير صحيحة" }),
   color: z.string().trim().optional(),
 });
 
@@ -153,7 +153,7 @@ const UpdateJobStatusSchema = z.object({
   labelAr: z.string().trim().min(1, { error: "التسمية بالعربية مطلوبة" }),
   sortOrder: z.string().trim().min(1, { error: "ترتيب العرض مطلوب" }),
   color: z.string().trim().optional(),
-  isActive: z.enum(["true", "false"]),
+  isActive: z.enum(["true", "false"], { error: "قيمة غير صحيحة" }),
 });
 
 /**
@@ -356,7 +356,7 @@ const UpdateWorkTypeSchema = z.object({
   labelAr: z.string().trim().min(1, { error: "التسمية بالعربية مطلوبة" }),
   defaultUnit: z.string().trim().min(1, { error: "الوحدة الافتراضية مطلوبة" }),
   sortOrder: z.string().trim().min(1, { error: "ترتيب العرض مطلوب" }),
-  isActive: z.enum(["true", "false"]),
+  isActive: z.enum(["true", "false"], { error: "قيمة غير صحيحة" }),
 });
 
 /**
@@ -551,7 +551,7 @@ const UpdateGlassTypeSchema = z.object({
   labelEn: z.string().trim().min(1, { error: "التسمية بالإنجليزية مطلوبة" }),
   labelAr: z.string().trim().min(1, { error: "التسمية بالعربية مطلوبة" }),
   sortOrder: z.string().trim().min(1, { error: "ترتيب العرض مطلوب" }),
-  isActive: z.enum(["true", "false"]),
+  isActive: z.enum(["true", "false"], { error: "قيمة غير صحيحة" }),
 });
 
 /** Edits a glass type's display fields. `key` is not editable — see
@@ -710,7 +710,7 @@ const UpdateCompensationRuleSchema = z.object({
   unit: z.enum(COMPENSATION_UNITS, { error: "الوحدة غير صحيحة" }),
   amount: z.string().trim().min(1, { error: "المبلغ مطلوب" }),
   workTypeId: z.uuid({ error: "نوع العمل غير صحيح" }).optional(),
-  isActive: z.enum(["true", "false"]),
+  isActive: z.enum(["true", "false"], { error: "قيمة غير صحيحة" }),
 });
 
 /**
@@ -815,7 +815,7 @@ const CreatePenaltyOrBonusRuleSchema = z.object({
 });
 
 const UpdatePenaltyOrBonusRuleSchema = CreatePenaltyOrBonusRuleSchema.extend({
-  isActive: z.enum(["true", "false"]),
+  isActive: z.enum(["true", "false"], { error: "قيمة غير صحيحة" }),
 });
 
 /**

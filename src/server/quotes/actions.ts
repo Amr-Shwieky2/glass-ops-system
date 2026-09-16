@@ -30,6 +30,7 @@ import { createQuoteVersion, type QuoteItemInput } from "./versions";
 import { applySignedQuoteToJob } from "./convert";
 import { checkRateLimit } from "@/server/security/rate-limit";
 import { assertJobVisible } from "@/server/jobs/access";
+import { getQuoteLabels, type QuoteLabels } from "@/lib/quote-i18n";
 
 export interface ActionState {
   error?: string;
@@ -322,22 +323,35 @@ export async function convertQuoteToJob(
 // required too, but that is a courtesy — this schema is the real gate,
 // since a public endpoint like this one is reachable by any direct POST,
 // not only through the rendered form).
-const SignSchema = z.object({
-  customerNameAtSigning: z.string().trim().min(1, { error: "الاسم مطلوب" }),
-  customerPhoneAtSigning: z.string().trim().min(1, { error: "رقم الهاتف مطلوب" }),
-  customerNationalIdAtSigning: z
-    .string()
-    .trim()
-    .min(1, { error: "رقم الهوية أو رقم الشركة مطلوب" }),
-  customerAddressAtSigning: z.string().trim().min(1, { error: "عنوان التركيب مطلوب" }),
-  agreedToTerms: z.literal("on", { error: "يجب الموافقة على الشروط" }),
-  signatureImage: z
-    .string()
-    .startsWith("data:image", { error: "التوقيع مطلوب" })
-    .max(3_000_000, { error: "صورة التوقيع كبيرة جداً" }),
-  latitude: z.string().trim().optional(),
-  longitude: z.string().trim().optional(),
-});
+/**
+ * Sprint 9: built per-request from the target quote's own language
+ * (Arabic or Hebrew, see quote-i18n.ts) instead of a single hardcoded-
+ * Arabic module-level schema — a Hebrew-language quote's signing page is
+ * otherwise fully Hebrew (quote-i18n.ts), so a validation failure here
+ * used to be the one place that broke language consistency for that
+ * customer.
+ */
+function buildSignSchema(labels: QuoteLabels) {
+  return z.object({
+    customerNameAtSigning: z.string().trim().min(1, { error: labels.errors.nameRequired }),
+    customerPhoneAtSigning: z.string().trim().min(1, { error: labels.errors.phoneRequired }),
+    customerNationalIdAtSigning: z
+      .string()
+      .trim()
+      .min(1, { error: labels.errors.nationalIdRequired }),
+    customerAddressAtSigning: z
+      .string()
+      .trim()
+      .min(1, { error: labels.errors.addressRequired }),
+    agreedToTerms: z.literal("on", { error: labels.errors.mustAgreeToTerms }),
+    signatureImage: z
+      .string()
+      .startsWith("data:image", { error: labels.errors.signatureRequired })
+      .max(3_000_000, { error: labels.errors.signatureTooLarge }),
+    latitude: z.string().trim().optional(),
+    longitude: z.string().trim().optional(),
+  });
+}
 
 function parseLatLng(raw: string | undefined, min: number, max: number): string | null {
   if (!raw) return null;
@@ -360,7 +374,30 @@ export async function signQuotePublicly(
     return { error: "محاولات كثيرة جداً. حاول مرة أخرى بعد قليل." };
   }
 
-  const parsed = SignSchema.safeParse({
+  // Looked up BEFORE validation (Sprint 9), not after, so every
+  // user-facing message below this point — including the validation
+  // errors — can be phrased in the quote's own language. A link that
+  // doesn't resolve to a quote at all has no language to speak in, so
+  // that one specific case falls back to "ar" (matches this module's own
+  // existing default-language convention).
+  const [link] = await db
+    .select()
+    .from(quotePublicLinks)
+    .where(eq(quotePublicLinks.token, token))
+    .limit(1);
+  const [quote] = link
+    ? await db.select().from(quotes).where(eq(quotes.id, link.quoteId)).limit(1)
+    : [undefined];
+  const labels = getQuoteLabels(quote?.language ?? "ar");
+
+  if (!link) return { error: labels.errors.invalidLink };
+  if (link.revokedAt) return { error: labels.errors.linkRevoked };
+  if (link.expiresAt && link.expiresAt < new Date()) {
+    return { error: labels.errors.linkExpired };
+  }
+  if (!quote?.currentVersionId) return { error: labels.errors.quoteNotFound };
+
+  const parsed = buildSignSchema(labels).safeParse({
     customerNameAtSigning: formData.get("customerNameAtSigning"),
     customerPhoneAtSigning: emptyToUndefined(formData.get("customerPhoneAtSigning")),
     customerNationalIdAtSigning: emptyToUndefined(
@@ -373,34 +410,16 @@ export async function signQuotePublicly(
     longitude: emptyToUndefined(formData.get("longitude")),
   });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" };
+    return { error: parsed.error.issues[0]?.message ?? labels.errors.invalidFormData };
   }
-
-  const [link] = await db
-    .select()
-    .from(quotePublicLinks)
-    .where(eq(quotePublicLinks.token, token))
-    .limit(1);
-  if (!link) return { error: "رابط غير صالح." };
-  if (link.revokedAt) return { error: "تم إلغاء هذا الرابط." };
-  if (link.expiresAt && link.expiresAt < new Date()) {
-    return { error: "انتهت صلاحية هذا الرابط." };
-  }
-
-  const [quote] = await db
-    .select()
-    .from(quotes)
-    .where(eq(quotes.id, link.quoteId))
-    .limit(1);
-  if (!quote?.currentVersionId) return { error: "تعذر العثور على عرض السعر." };
 
   const [version] = await db
     .select({ id: quoteVersions.id, isSigned: quoteVersions.isSigned })
     .from(quoteVersions)
     .where(eq(quoteVersions.id, quote.currentVersionId))
     .limit(1);
-  if (!version) return { error: "تعذر العثور على عرض السعر." };
-  if (version.isSigned) return { error: "تم توقيع هذا العرض مسبقاً." };
+  if (!version) return { error: labels.errors.quoteNotFound };
+  if (version.isSigned) return { error: labels.errors.alreadySigned };
 
   const headersList = await headers();
   const forwardedFor = headersList.get("x-forwarded-for");
@@ -452,9 +471,9 @@ export async function signQuotePublicly(
   } catch (err: unknown) {
     const code = (err as { code?: string } | null)?.code;
     if (code === "23505") {
-      return { error: "تم توقيع هذا العرض للتو من جهاز آخر." };
+      return { error: labels.errors.signedConcurrently };
     }
-    return { error: "تعذر حفظ التوقيع، حاول مرة أخرى." };
+    return { error: labels.errors.saveFailed };
   }
 
   // ---------------------------------------------------------------------

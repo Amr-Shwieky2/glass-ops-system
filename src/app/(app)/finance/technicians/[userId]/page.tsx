@@ -19,6 +19,7 @@ import {
 } from "@/server/finance/queries";
 import { getSetting } from "@/server/settings";
 import { formatILS, isNegative, isPositive, parseNonNegativeMoneyInput } from "@/server/money";
+import { COMPANY_TIMEZONE } from "@/lib/company-day";
 import { Forbidden } from "@/components/forbidden";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -98,6 +99,7 @@ const dateTimeFmt = new Intl.DateTimeFormat("ar", {
   hour: "2-digit",
   minute: "2-digit",
   numberingSystem: "latn",
+  timeZone: COMPANY_TIMEZONE,
 });
 
 /**

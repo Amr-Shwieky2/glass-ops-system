@@ -9,11 +9,17 @@ import { CompleteInstallationDialog } from "./complete-installation-dialog";
 import { ArrivedButton } from "./arrived-button";
 import { AddFieldNoteDialog } from "./add-field-note-dialog";
 import { AddPaymentDialog } from "../jobs/[id]/add-payment-dialog";
+import { COMPANY_TIMEZONE } from "@/lib/company-day";
 
+// scheduledStart/arrivedAt are real timestamptz instants — pinning
+// timeZone here (Sprint 9) keeps a technician's own schedule showing the
+// actual Jerusalem-local time regardless of the deployment's own Node
+// process timezone.
 const timeFmt = new Intl.DateTimeFormat("ar", {
   hour: "2-digit",
   minute: "2-digit",
   numberingSystem: "latn",
+  timeZone: COMPANY_TIMEZONE,
 });
 
 const APPOINTMENT_TYPE_LABEL_AR: Record<string, string> = {

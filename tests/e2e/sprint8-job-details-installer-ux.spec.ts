@@ -238,7 +238,7 @@ test.describe("Sprint 8 — installation completion persistence, standalone paym
     // as an inert prop.
     await page.click('button:has-text("أسبوع")');
     await page.waitForTimeout(500);
-    let text = await page.innerText("body");
+    const text = await page.innerText("body");
     expect(text).toContain("اليوم كله");
 
     expect(text).toContain(job.jobNumber);

@@ -2,6 +2,7 @@ import "server-only";
 import { technicianLedgerEntries, jobCosts } from "@/server/db/schema";
 import type { Database } from "@/server/db/client";
 import type { Money } from "@/server/money";
+import { getTodayDateString } from "@/lib/company-day";
 
 /** Mirrors ledgerEntryTypeEnum in src/server/db/schema/enums.ts. */
 export type LedgerEntryType =
@@ -125,6 +126,6 @@ export async function pairInstallerLaborCost(
     createdByUserId: params.createdByUserId,
     approvedByUserId: params.approved ? params.createdByUserId : undefined,
     approvedAt: params.approved ? now : undefined,
-    incurredAt: now.toISOString().slice(0, 10),
+    incurredAt: getTodayDateString(now),
   });
 }

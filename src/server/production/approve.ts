@@ -20,6 +20,7 @@ import { PERMISSIONS, type PermissionKey } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
 import { notifyUser, notifyUsers } from "@/server/notifications";
 import { advanceJobStatus } from "@/server/jobs/status";
+import { getTodayDateString } from "@/lib/company-day";
 import type { ActionState } from "./actions";
 
 async function getUsersWithPermission(permissionKey: PermissionKey) {
@@ -177,7 +178,7 @@ export async function approveFactorySubmission(
       createdByUserId: user!.id,
       approvedByUserId: user!.id,
       approvedAt: now,
-      incurredAt: now.toISOString().slice(0, 10),
+      incurredAt: getTodayDateString(now),
     });
 
     await advanceJobStatus(tx, request.jobId, "ready_from_factory");

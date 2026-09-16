@@ -143,7 +143,7 @@ const UpdateVehicleSchema = z.object({
   plateNumber: z.string().trim().min(1, { error: "رقم اللوحة مطلوب" }),
   fuelType: z.enum(FUEL_TYPES, { error: "نوع الوقود غير صحيح" }),
   estimatedValue: z.string().trim().optional(),
-  isActive: z.enum(["true", "false"]),
+  isActive: z.enum(["true", "false"], { error: "قيمة غير صحيحة" }),
   notes: z.string().trim().optional(),
 });
 

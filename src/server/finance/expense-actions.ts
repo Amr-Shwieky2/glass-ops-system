@@ -148,7 +148,7 @@ export async function reportFieldExpenseAction(
 }
 
 const DecideFieldExpenseSchema = z.object({
-  decision: z.enum(["approve", "reject"]),
+  decision: z.enum(["approve", "reject"], { error: "القرار غير صحيح" }),
   rejectionReason: z.string().trim().optional(),
 });
 

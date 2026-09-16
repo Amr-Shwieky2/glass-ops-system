@@ -26,7 +26,9 @@ function emptyToUndefined(value: FormDataEntryValue | null): string | undefined 
 
 const AddPaymentSchema = z.object({
   amount: z.string().trim().min(1, { error: "المبلغ مطلوب" }),
-  method: z.enum(["cash", "bank_transfer", "check", "other"]),
+  method: z.enum(["cash", "bank_transfer", "check", "other"], {
+    error: "طريقة الدفع غير صحيحة",
+  }),
   notes: z.string().trim().optional(),
 });
 

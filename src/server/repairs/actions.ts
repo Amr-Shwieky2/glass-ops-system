@@ -12,6 +12,7 @@ import { recordAudit } from "@/server/audit";
 import { notifyUser } from "@/server/notifications";
 import { advanceJobStatus } from "@/server/jobs/status";
 import { assertJobVisible } from "@/server/jobs/access";
+import { getTodayDateString } from "@/lib/company-day";
 
 export interface ActionState {
   error?: string;
@@ -21,10 +22,6 @@ export interface ActionState {
 function emptyToUndefined(value: FormDataEntryValue | null): string | undefined {
   const s = typeof value === "string" ? value.trim() : "";
   return s.length > 0 ? s : undefined;
-}
-
-function todayDateString(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -44,7 +41,7 @@ const CreateRepairSchema = z.object({
     .trim()
     .regex(DATE_RE, { error: "تاريخ الإبلاغ غير صحيح" })
     .optional(),
-  responsibleUserId: z.string().uuid().optional(),
+  responsibleUserId: z.string().uuid({ error: "معرّف مستخدم غير صحيح" }).optional(),
   scheduledDate: z
     .string()
     .trim()
@@ -76,7 +73,7 @@ export async function createRepairAction(
     return { error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" };
   }
 
-  const dateReported = parsed.data.dateReported ?? todayDateString();
+  const dateReported = parsed.data.dateReported ?? getTodayDateString();
   const status: "open" | "scheduled" = parsed.data.scheduledDate ? "scheduled" : "open";
 
   await db.transaction(async (tx) => {

@@ -17,6 +17,7 @@ import {
 import type { BonusRuleOption, PenaltyRuleOption } from "@/server/compensation/queries";
 import { formatILS } from "@/server/money";
 import { useCloseOnSuccess } from "@/lib/use-close-on-success";
+import { getTodayDateString } from "@/lib/company-day";
 import {
   Dialog,
   DialogContent,
@@ -313,7 +314,7 @@ export function DailyWageDialog({ userId }: { userId: string }) {
   const [open, setOpen] = React.useState(false);
   const action = recordDailyWage.bind(null, userId);
   const [state, formAction] = useActionState(action, initialState);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getTodayDateString();
 
   useCloseOnSuccess(state, setOpen);
 

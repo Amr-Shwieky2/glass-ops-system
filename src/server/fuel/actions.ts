@@ -29,7 +29,7 @@ const AddFuelSchema = z.object({
   amount: z.string().trim().min(1, { error: "المبلغ مطلوب" }),
   liters: z.string().trim().optional(),
   mileage: z.string().trim().optional(),
-  receiptPhotoTaken: z.enum(["true", "false"]).optional(),
+  receiptPhotoTaken: z.enum(["true", "false"], { error: "قيمة غير صحيحة" }).optional(),
   notes: z.string().trim().optional(),
 });
 

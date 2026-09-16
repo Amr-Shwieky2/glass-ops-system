@@ -116,6 +116,29 @@ export interface QuoteLabels {
     /** e.g. "تم التوقيع بتاريخ {date} بواسطة {name}. شكراً لك." */
     signedDescription: (signedDate: string, signerName: string) => string;
   };
+  /** Sprint 9: signQuotePublicly's own server-side validation/failure
+   * messages (src/server/quotes/actions.ts) — before this section existed
+   * they were hardcoded Arabic literals, so a customer signing a
+   * Hebrew-language quote who tripped one (a required field slipping past
+   * the client check, a stale/expired link, a double-submit race) saw an
+   * Arabic error banner on an otherwise fully-Hebrew page. */
+  errors: {
+    nameRequired: string;
+    phoneRequired: string;
+    nationalIdRequired: string;
+    addressRequired: string;
+    mustAgreeToTerms: string;
+    signatureRequired: string;
+    signatureTooLarge: string;
+    invalidFormData: string;
+    invalidLink: string;
+    linkRevoked: string;
+    linkExpired: string;
+    quoteNotFound: string;
+    alreadySigned: string;
+    signedConcurrently: string;
+    saveFailed: string;
+  };
 }
 
 const UNIT_MAP_AR: Record<string, string> = {
@@ -182,6 +205,23 @@ const AR: QuoteLabels = {
     signedDescription: (signedDate, signerName) =>
       `تم التوقيع بتاريخ ${signedDate} بواسطة ${signerName}. شكراً لك.`,
   },
+  errors: {
+    nameRequired: "الاسم مطلوب",
+    phoneRequired: "رقم الهاتف مطلوب",
+    nationalIdRequired: "رقم الهوية أو رقم الشركة مطلوب",
+    addressRequired: "عنوان التركيب مطلوب",
+    mustAgreeToTerms: "يجب الموافقة على الشروط",
+    signatureRequired: "التوقيع مطلوب",
+    signatureTooLarge: "صورة التوقيع كبيرة جداً",
+    invalidFormData: "بيانات غير صحيحة",
+    invalidLink: "رابط غير صالح.",
+    linkRevoked: "تم إلغاء هذا الرابط.",
+    linkExpired: "انتهت صلاحية هذا الرابط.",
+    quoteNotFound: "تعذر العثور على عرض السعر.",
+    alreadySigned: "تم توقيع هذا العرض مسبقاً.",
+    signedConcurrently: "تم توقيع هذا العرض للتو من جهاز آخر.",
+    saveFailed: "تعذر حفظ التوقيع، حاول مرة أخرى.",
+  },
 };
 
 const HE: QuoteLabels = {
@@ -232,6 +272,23 @@ const HE: QuoteLabels = {
     signedTitle: "הצעת המחיר נחתמה",
     signedDescription: (signedDate, signerName) =>
       `ההצעה נחתמה בתאריך ${signedDate} על ידי ${signerName}. תודה רבה.`,
+  },
+  errors: {
+    nameRequired: "יש להזין שם",
+    phoneRequired: "יש להזין מספר טלפון",
+    nationalIdRequired: "יש להזין תעודת זהות או מספר חברה",
+    addressRequired: "יש להזין כתובת התקנה",
+    mustAgreeToTerms: "יש לאשר את התנאים",
+    signatureRequired: "חתימה נדרשת",
+    signatureTooLarge: "קובץ החתימה גדול מדי",
+    invalidFormData: "נתונים שגויים",
+    invalidLink: "קישור לא תקין.",
+    linkRevoked: "קישור זה בוטל.",
+    linkExpired: "תוקף קישור זה פג.",
+    quoteNotFound: "לא ניתן היה לאתר את הצעת המחיר.",
+    alreadySigned: "הצעת מחיר זו כבר נחתמה.",
+    signedConcurrently: "הצעת מחיר זו נחתמה זה עתה ממכשיר אחר.",
+    saveFailed: "שמירת החתימה נכשלה, נסו שוב.",
   },
 };
 

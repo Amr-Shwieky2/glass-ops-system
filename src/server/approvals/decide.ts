@@ -55,7 +55,7 @@ function emptyToUndefined(value: FormDataEntryValue | null): string | undefined 
 }
 
 const DecideCustomerPaymentSchema = z.object({
-  decision: z.enum(["approve", "reject"]),
+  decision: z.enum(["approve", "reject"], { error: "القرار غير صحيح" }),
   rejectionReason: z.string().trim().optional(),
 });
 

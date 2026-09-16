@@ -60,17 +60,14 @@ const APPOINTMENT_TYPE_LABEL_AR: Record<string, string> = {
 };
 
 const ScheduleAppointmentSchema = z.object({
-  type: z.enum([
-    "measurement",
-    "installation",
-    "repair",
-    "customer_meeting",
-    "other",
-  ]),
+  type: z.enum(
+    ["measurement", "installation", "repair", "customer_meeting", "other"],
+    { error: "نوع الموعد غير صحيح" },
+  ),
   scheduledStart: z.string().min(1, { error: "تاريخ ووقت البدء مطلوبان" }),
   scheduledEnd: z.string().trim().optional(),
   assigneeUserIds: z
-    .array(z.string().uuid())
+    .array(z.string().uuid({ error: "معرّف مستخدم غير صحيح" }))
     .min(1, { error: "اختر مسؤولاً واحداً على الأقل" }),
   location: z.string().trim().optional(),
   notes: z.string().trim().optional(),

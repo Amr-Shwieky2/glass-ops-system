@@ -4,22 +4,9 @@ import { incomingChecks, outgoingChecks, customers, jobs } from "@/server/db/sch
 import { db } from "@/server/db/client";
 import { getSetting } from "@/server/settings";
 import type { Money } from "@/server/money";
+import { isCheckDueSoon } from "./due-soon";
 
-/**
- * Whether a check's due date is within `thresholdDays` of today (section
- * 39). Deliberately also true for an already-overdue check (a negative
- * day count) — an overdue check is at least as urgent as a "due soon" one,
- * and the UI stage uses this single helper for both the automatic
- * incoming-check status ('future' -> 'due_soon') and highlighting either
- * kind of check regardless of its stored status.
- */
-export function isCheckDueSoon(dueDate: string | Date, thresholdDays: number): boolean {
-  const due = typeof dueDate === "string" ? new Date(`${dueDate}T00:00:00`) : dueDate;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diffDays = Math.round((due.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
-  return diffDays <= thresholdDays;
-}
+export { isCheckDueSoon };
 
 export interface IncomingCheckRow {
   id: string;

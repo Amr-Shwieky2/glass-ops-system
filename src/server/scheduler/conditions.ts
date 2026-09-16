@@ -18,6 +18,7 @@ import { notifyUsers } from "@/server/notifications";
 import { PERMISSIONS, type PermissionKey } from "@/server/auth/permission-keys";
 import { sumMoney, subtractMoney, isPositive, type Money } from "@/server/money";
 import { getIncomingChecks } from "@/server/checks/queries";
+import { addCompanyDays } from "@/lib/company-day";
 
 /**
  * The 7 time/condition-based notification triggers R1.39/R1.53 named as
@@ -260,10 +261,13 @@ export async function checkIncomingCheckDueReminders(): Promise<void> {
 // ---------------------------------------------------------------------
 export async function checkStaleRepairReminders(): Promise<void> {
   const { staleRepairDays } = await getSetting("notification_thresholds");
-  const cutoff = new Date();
-  cutoff.setHours(0, 0, 0, 0);
-  cutoff.setDate(cutoff.getDate() - staleRepairDays);
-  const cutoffDateString = cutoff.toISOString().slice(0, 10);
+  // Sprint 9: was computed via the server process's own local midnight
+  // (setHours(0,0,0,0)), not the company's — the same class of bug
+  // isCheckDueSoon had, just for a scheduled trigger instead of a display
+  // value. A server not itself running in Asia/Jerusalem would mark a
+  // repair stale up to a few hours early or late relative to the
+  // business's actual day boundary.
+  const cutoffDateString = addCompanyDays(-staleRepairDays);
 
   const rows = await db
     .select({

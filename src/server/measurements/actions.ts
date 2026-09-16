@@ -76,7 +76,7 @@ const FieldMeasurementSchema = z.object({
   glassTypeId: z.string().uuid({ error: "نوع الزجاج غير صحيح" }).optional(),
   notes: z.string().trim().optional(),
   price: z.string().trim().optional(),
-  priceIncludesVat: z.enum(["true", "false"]).optional(),
+  priceIncludesVat: z.enum(["true", "false"], { error: "قيمة غير صحيحة" }).optional(),
 });
 
 /**

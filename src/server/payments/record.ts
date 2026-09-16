@@ -8,6 +8,7 @@ import { recordAudit } from "@/server/audit";
 import { formatILS, type Money } from "@/server/money";
 import { creditCashAccount } from "@/server/finance/cash";
 import { createApprovalRequest } from "@/server/approvals/decide";
+import { getTodayDateString } from "@/lib/company-day";
 
 function paymentMethodLabelAr(method: string): string {
   switch (method) {
@@ -92,7 +93,7 @@ export async function recordCustomerPayment(
       customerId: params.customerId,
       jobId: params.jobId,
       amount: params.amount,
-      paymentDate: now.toISOString().slice(0, 10),
+      paymentDate: getTodayDateString(now),
       method: params.method,
       receivedByUserId: params.receivedByUserId,
       notes: params.notes,

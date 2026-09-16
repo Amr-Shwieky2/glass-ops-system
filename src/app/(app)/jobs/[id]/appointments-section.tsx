@@ -1,6 +1,7 @@
 import { CalendarClock } from "lucide-react";
 import type { JobAppointment } from "@/server/appointments/queries";
 import { cancelAppointmentAction } from "@/server/appointments/actions";
+import { COMPANY_TIMEZONE } from "@/lib/company-day";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -14,6 +15,7 @@ const dateTimeFmt = new Intl.DateTimeFormat("ar", {
   hour: "2-digit",
   minute: "2-digit",
   numberingSystem: "latn",
+  timeZone: COMPANY_TIMEZONE,
 });
 
 const APPOINTMENT_TYPE_LABEL_AR: Record<string, string> = {

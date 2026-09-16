@@ -8,7 +8,7 @@ import { getCurrentUser } from "@/server/auth/session";
 import { can, canAny } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
 import { involvementFilter } from "@/server/jobs/queries";
-import { getTodayRangeUtc } from "@/lib/company-day";
+import { getTodayRangeUtc, COMPANY_TIMEZONE } from "@/lib/company-day";
 import { getOpenRepairsCount, getOpenRepairs } from "@/server/repairs/queries";
 import {
   PREVIEW_LIMIT,
@@ -49,10 +49,15 @@ export const metadata: Metadata = {
   title: "لوحة التحكم | نظام إدارة عمليات الزجاج",
 };
 
+// scheduledStart is a real timestamptz (an absolute UTC instant) — pinning
+// timeZone here (Sprint 9) keeps "Today's Schedule" showing the actual
+// Jerusalem-local appointment time regardless of which timezone the
+// deployment's Node process itself runs in.
 const timeFmt = new Intl.DateTimeFormat("ar", {
   hour: "2-digit",
   minute: "2-digit",
   numberingSystem: "latn",
+  timeZone: COMPANY_TIMEZONE,
 });
 
 const dueDateFmt = new Intl.DateTimeFormat("ar", {

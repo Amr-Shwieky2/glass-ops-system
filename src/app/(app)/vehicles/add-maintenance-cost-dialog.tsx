@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Plus } from "lucide-react";
 import { recordMaintenanceCostAction, type ActionState } from "@/server/vehicles/maintenance-actions";
 import { useCloseOnSuccess } from "@/lib/use-close-on-success";
+import { getTodayDateString } from "@/lib/company-day";
 import {
   Dialog,
   DialogContent,
@@ -51,7 +52,7 @@ function SubmitButton() {
 export function AddMaintenanceCostDialog({ vehicleId }: { vehicleId: string }) {
   const [open, setOpen] = React.useState(false);
   const [state, formAction] = useActionState(recordMaintenanceCostAction, initialState);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getTodayDateString();
 
   useCloseOnSuccess(state, setOpen);
 

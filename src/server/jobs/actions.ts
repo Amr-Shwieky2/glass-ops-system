@@ -168,7 +168,7 @@ const MeasurementSchema = z.object({
   measuredAt: z.string().min(1, { error: "التاريخ والوقت مطلوبان" }),
   details: z.string().trim().optional(),
   photosTaken: z.boolean(),
-  pricingResponsibleUserId: z.string().uuid().optional(),
+  pricingResponsibleUserId: z.string().uuid({ error: "معرّف مستخدم غير صحيح" }).optional(),
 });
 
 export async function createMeasurement(

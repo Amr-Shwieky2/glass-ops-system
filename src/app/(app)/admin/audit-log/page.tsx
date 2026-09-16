@@ -6,6 +6,12 @@ import { can } from "@/server/auth/permissions";
 import { PERMISSIONS } from "@/server/auth/permission-keys";
 import { getAuditLog } from "@/server/audit/queries";
 import { listUsers } from "@/server/users/queries";
+import { COMPANY_TIMEZONE } from "@/lib/company-day";
+import {
+  formatAuditAction,
+  formatEntityType,
+  translateFieldNames,
+} from "@/lib/audit-labels";
 import { Forbidden } from "@/components/forbidden";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -33,6 +39,7 @@ const dateTimeFmt = new Intl.DateTimeFormat("ar", {
   hour: "2-digit",
   minute: "2-digit",
   numberingSystem: "latn",
+  timeZone: COMPANY_TIMEZONE,
 });
 
 /** entityType -> a route this app actually has, or undefined for "no link,
@@ -165,17 +172,17 @@ export default async function AdminAuditLogPage({
                         <TableCell className="whitespace-nowrap">
                           {row.userName ?? "النظام"}
                         </TableCell>
-                        <TableCell dir="ltr" className="text-end font-mono text-xs">
-                          {row.action}
+                        <TableCell className="text-end text-sm">
+                          {formatAuditAction(row.action)}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
                           {href ? (
                             <Link href={href} className="hover:underline">
-                              {row.entityType} / {row.entityId.slice(0, 8)}
+                              {formatEntityType(row.entityType)} · {row.entityId.slice(0, 8)}
                             </Link>
                           ) : (
-                            <span dir="ltr" className="text-muted-foreground">
-                              {row.entityType} / {row.entityId.slice(0, 8)}
+                            <span className="text-muted-foreground">
+                              {formatEntityType(row.entityType)} · {row.entityId.slice(0, 8)}
                             </span>
                           )}
                         </TableCell>
@@ -190,7 +197,10 @@ export default async function AdminAuditLogPage({
                                 className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-2 text-start font-mono text-[11px] leading-relaxed"
                               >
                                 {JSON.stringify(
-                                  { old: row.oldValue, new: row.newValue },
+                                  {
+                                    قبل: translateFieldNames(row.oldValue),
+                                    بعد: translateFieldNames(row.newValue),
+                                  },
                                   null,
                                   2,
                                 )}

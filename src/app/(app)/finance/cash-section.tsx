@@ -6,6 +6,7 @@ import { PERMISSIONS } from "@/server/auth/permission-keys";
 import { getCashAccountBalances } from "@/server/finance/queries";
 import { getPendingCashTransfers } from "./queries";
 import { formatILS } from "@/server/money";
+import { COMPANY_TIMEZONE } from "@/lib/company-day";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { HandOverCashDialog } from "./hand-over-cash-dialog";
@@ -18,6 +19,7 @@ const dateTimeFmt = new Intl.DateTimeFormat("ar", {
   hour: "2-digit",
   minute: "2-digit",
   numberingSystem: "latn",
+  timeZone: COMPANY_TIMEZONE,
 });
 
 export async function CashSection({ user }: { user: AuthedUser }) {

@@ -8,6 +8,7 @@ import { PERMISSIONS } from "@/server/auth/permission-keys";
 import { getVehicleDetail, getFuelLogsForVehicle } from "@/server/vehicles/queries";
 import { getAssignableUsers } from "@/server/jobs/queries";
 import { formatILS } from "@/server/money";
+import { COMPANY_TIMEZONE } from "@/lib/company-day";
 import { Forbidden } from "@/components/forbidden";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +42,7 @@ const dateTimeFmt = new Intl.DateTimeFormat("ar", {
   hour: "2-digit",
   minute: "2-digit",
   numberingSystem: "latn",
+  timeZone: COMPANY_TIMEZONE,
 });
 
 export async function generateMetadata({

@@ -70,7 +70,7 @@ async function getOrCreateCompanyCashAccount(tx: Database): Promise<string> {
 }
 
 const CreateCashTransferSchema = z.object({
-  toAccountKind: z.enum(["company"]),
+  toAccountKind: z.enum(["company"], { error: "وجهة التحويل غير صحيحة" }),
   amount: z.string().trim().min(1, { error: "المبلغ مطلوب" }),
   notes: z.string().trim().optional(),
 });

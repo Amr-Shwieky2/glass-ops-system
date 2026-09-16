@@ -14,6 +14,7 @@ import { parseNonNegativeMoneyInput, isPositive, formatILS } from "@/server/mone
 import { createApprovalRequest } from "@/server/approvals/decide";
 import { MANUAL_JOB_COST_CATEGORIES, type ManualJobCostCategory } from "@/server/costs/queries";
 import { assertJobVisible } from "@/server/jobs/access";
+import { getTodayDateString } from "@/lib/company-day";
 
 export interface ActionState {
   error?: string;
@@ -23,10 +24,6 @@ export interface ActionState {
 function emptyToUndefined(value: FormDataEntryValue | null): string | undefined {
   const s = typeof value === "string" ? value.trim() : "";
   return s.length > 0 ? s : undefined;
-}
-
-function todayDateString(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 /**
@@ -67,9 +64,9 @@ const AddJobCostSchema = z.object({
   category: z.enum(MANUAL_JOB_COST_CATEGORIES, { error: "الفئة غير صحيحة" }),
   amount: z.string().trim().min(1, { error: "المبلغ مطلوب" }),
   description: z.string().trim().min(1, { error: "الوصف مطلوب" }),
-  jobItemId: z.uuid().optional(),
-  externalContractorId: z.uuid().optional(),
-  vendorUserId: z.uuid().optional(),
+  jobItemId: z.uuid({ error: "معرّف بند غير صحيح" }).optional(),
+  externalContractorId: z.uuid({ error: "معرّف مقاول غير صحيح" }).optional(),
+  vendorUserId: z.uuid({ error: "معرّف فني غير صحيح" }).optional(),
   incurredAt: z
     .string()
     .trim()
@@ -140,7 +137,7 @@ export async function addJobCostAction(
 
   const autoApproved = isSuperAdmin(user);
   const now = new Date();
-  const incurredAt = parsed.data.incurredAt ?? todayDateString();
+  const incurredAt = parsed.data.incurredAt ?? getTodayDateString(now);
 
   await db.transaction(async (tx) => {
     const [cost] = await tx
@@ -206,7 +203,7 @@ export async function addJobCostAction(
 }
 
 const DecideJobCostSchema = z.object({
-  decision: z.enum(["approve", "reject"]),
+  decision: z.enum(["approve", "reject"], { error: "القرار غير صحيح" }),
   rejectionReason: z.string().trim().optional(),
 });
 

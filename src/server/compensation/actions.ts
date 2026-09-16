@@ -740,7 +740,7 @@ export async function reportTechnicianPayment(
 }
 
 const DecideLedgerEntrySchema = z.object({
-  decision: z.enum(["approve", "reject"]),
+  decision: z.enum(["approve", "reject"], { error: "القرار غير صحيح" }),
   rejectionReason: z.string().trim().optional(),
 });
 
