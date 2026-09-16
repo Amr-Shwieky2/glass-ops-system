@@ -3,6 +3,7 @@ import {
   uuid,
   text,
   timestamp,
+  boolean,
   primaryKey,
   index,
 } from "drizzle-orm/pg-core";
@@ -29,6 +30,13 @@ export const appointments = pgTable(
     // scheduled -> arrived. Null until then and forever after for any
     // appointment that skips straight to completed/cancelled.
     arrivedAt: timestamp("arrived_at", { withTimezone: true }),
+    // Sprint 8 — before this column existed, completeInstallationAction's
+    // photoTaken checklist value was written ONLY into the audit_logs JSON
+    // blob (recordAudit's newValue), never a real, queryable column —
+    // exactly the "schema support ≠ feature completion" pattern named
+    // elsewhere in this effort, just for a boolean instead of a table.
+    // Mirrors vehicles.fuelLogs.receiptPhotoTaken's own naming/shape.
+    photoTaken: boolean("photo_taken").notNull().default(false),
     notes: text("notes"),
     createdByUserId: uuid("created_by_user_id").references(() => users.id, {
       onDelete: "set null",

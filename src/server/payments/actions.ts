@@ -12,6 +12,7 @@ import { parseNonNegativeMoneyInput, isPositive } from "@/server/money";
 import { recordCustomerPayment, getUserIdsWithPermission } from "@/server/payments/record";
 import { notifyUsers } from "@/server/notifications";
 import { assertJobVisible } from "@/server/jobs/access";
+import { isAssignedToJob } from "@/server/appointments/queries";
 
 export interface ActionState {
   error?: string;
@@ -48,8 +49,17 @@ export async function addPaymentAction(
   // jobs this caller may see — without this, any COLLECT_PAYMENT holder
   // could record a payment against an arbitrary job UUID they have no
   // relationship to (master execution prompt's job-scoped IDOR audit).
-  const visErr = await assertJobVisible(user, jobId);
-  if (visErr) return { error: visErr };
+  // assertJobVisible alone isn't enough here (Sprint 8): a technician
+  // scheduled onto a job only via "جدولة موعد" (appointment_assignees),
+  // never separately run through "تعيين فني" (job_assignments), fails
+  // assertJobVisible's involvementFilter even though My Day's own "جمع
+  // دفعة" quick action already shows them this exact job — same fallback
+  // addFieldNoteAction already relies on for the same reason.
+  const assignedViaAppointment = await isAssignedToJob(jobId, user!.id);
+  if (!assignedViaAppointment) {
+    const visErr = await assertJobVisible(user, jobId);
+    if (visErr) return { error: visErr };
+  }
 
   const parsed = AddPaymentSchema.safeParse({
     amount: formData.get("amount"),

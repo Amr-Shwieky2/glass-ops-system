@@ -1,0 +1,1 @@
+ALTER TABLE "appointments" ADD COLUMN "photo_taken" boolean DEFAULT false NOT NULL;

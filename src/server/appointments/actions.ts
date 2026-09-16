@@ -12,7 +12,11 @@ import { PERMISSIONS, type PermissionKey } from "@/server/auth/permission-keys";
 import { recordAudit } from "@/server/audit";
 import { notifyUsers } from "@/server/notifications";
 import { advanceJobStatus } from "@/server/jobs/status";
-import { getAssigneeConflicts, isAppointmentAssignee } from "@/server/appointments/queries";
+import {
+  getAssigneeConflicts,
+  isAppointmentAssignee,
+  isAssignedToJob,
+} from "@/server/appointments/queries";
 import { COMPANY_TIMEZONE } from "@/lib/company-day";
 import { assertJobVisible } from "@/server/jobs/access";
 
@@ -400,19 +404,6 @@ const fieldNoteTimestampFmt = new Intl.DateTimeFormat("ar", {
 
 function formatFieldNoteEntry(note: string, author: AuthedUser, at: Date): string {
   return `[${fieldNoteTimestampFmt.format(at)}] ${author.name}: ${note}`;
-}
-
-/** Whether `userId` is an assignee on any (non-cancelled or not) appointment
- * belonging to `jobId` — job-level, not appointment-level, since a field
- * note isn't tied to one specific visit. */
-async function isAssignedToJob(jobId: string, userId: string): Promise<boolean> {
-  const [row] = await db
-    .select({ userId: appointmentAssignees.userId })
-    .from(appointmentAssignees)
-    .innerJoin(appointments, eq(appointmentAssignees.appointmentId, appointments.id))
-    .where(and(eq(appointments.jobId, jobId), eq(appointmentAssignees.userId, userId)))
-    .limit(1);
-  return !!row;
 }
 
 export async function addFieldNoteAction(

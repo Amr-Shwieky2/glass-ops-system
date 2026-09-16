@@ -45,7 +45,18 @@ function SubmitButton() {
   );
 }
 
-export function AddPaymentDialog({ jobId }: { jobId: string }) {
+export function AddPaymentDialog({
+  jobId,
+  triggerLabel = "إضافة دفعة",
+}: {
+  jobId: string;
+  /** Sprint 8 (S8.3): My Day's standalone quick action reuses this exact
+   * dialog/action but needs the master-prompt-named "جمع دفعة" wording
+   * instead of the job page's own "إضافة دفعة" — everything else about
+   * the dialog (fields, validation, permission check) is identical, so
+   * this is a label override, not a second component. */
+  triggerLabel?: string;
+}) {
   const [open, setOpen] = React.useState(false);
   const action = addPaymentAction.bind(null, jobId);
   const [state, formAction] = useActionState(action, initialState);
@@ -63,7 +74,7 @@ export function AddPaymentDialog({ jobId }: { jobId: string }) {
       <DialogTrigger asChild>
         <Button size="sm" variant="outline">
           <Plus className="size-4" />
-          إضافة دفعة
+          {triggerLabel}
         </Button>
       </DialogTrigger>
       <DialogContent>

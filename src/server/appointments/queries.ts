@@ -398,3 +398,22 @@ export async function isAppointmentAssignee(
     .limit(1);
   return !!row;
 }
+
+/** Whether `userId` is an assignee on any (non-cancelled or not) appointment
+ * belonging to `jobId` — job-level, not appointment-level, since some
+ * actions (a field note, a My Day payment collection) aren't tied to one
+ * specific visit. Moved here from appointments/actions.ts (Sprint 8) so
+ * payments/actions.ts can share it too: a technician scheduled onto a job
+ * only via "جدولة موعد" (appointment_assignees) — never separately run
+ * through "تعيين فني" (job_assignments) — is exactly the case
+ * assertJobVisible's involvementFilter doesn't cover, yet My Day already
+ * shows them a "جمع دفعة" button for that job. */
+export async function isAssignedToJob(jobId: string, userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ userId: appointmentAssignees.userId })
+    .from(appointmentAssignees)
+    .innerJoin(appointments, eq(appointmentAssignees.appointmentId, appointments.id))
+    .where(and(eq(appointments.jobId, jobId), eq(appointmentAssignees.userId, userId)))
+    .limit(1);
+  return !!row;
+}

@@ -35,6 +35,12 @@ export default async function MyDayPage() {
   const canCompleteInstallation = can(user, PERMISSIONS.COMPLETE_INSTALLATION);
   const canAddFuel = can(user, PERMISSIONS.ADD_FUEL);
   const canCreateMeasurement = can(user, PERMISSIONS.CREATE_MEASUREMENT);
+  // Sprint 8 (S8.3): before this, collecting a payment from My Day was
+  // only reachable as a side effect of the "إكمال التركيب" completion
+  // dialog — no standalone action existed, even though a COLLECT_PAYMENT
+  // holder might need to collect a payment on a visit that isn't an
+  // installation completion at all (e.g. a repair visit, or a follow-up).
+  const canCollectPayment = can(user, PERMISSIONS.COLLECT_PAYMENT);
 
   const [appointments, vehicles] = await Promise.all([
     getMyDayAppointments(user.id, start, end),
@@ -58,6 +64,7 @@ export default async function MyDayPage() {
               key={a.id}
               appointment={a}
               canCompleteInstallation={canCompleteInstallation}
+              canCollectPayment={canCollectPayment}
             />
           ))}
         </div>

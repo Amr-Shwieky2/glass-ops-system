@@ -8,6 +8,7 @@ import { LocationButtons } from "@/components/location-buttons";
 import { CompleteInstallationDialog } from "./complete-installation-dialog";
 import { ArrivedButton } from "./arrived-button";
 import { AddFieldNoteDialog } from "./add-field-note-dialog";
+import { AddPaymentDialog } from "../jobs/[id]/add-payment-dialog";
 
 const timeFmt = new Intl.DateTimeFormat("ar", {
   hour: "2-digit",
@@ -37,9 +38,11 @@ const APPOINTMENT_TYPE_VARIANT: Record<
 export function AppointmentCard({
   appointment,
   canCompleteInstallation,
+  canCollectPayment,
 }: {
   appointment: MyDayAppointment;
   canCompleteInstallation: boolean;
+  canCollectPayment: boolean;
 }) {
   const a = appointment;
   // 'arrived' is a valid pre-completion state too (arrival tracking is
@@ -103,6 +106,7 @@ export function AppointmentCard({
           </Button>
           {canMarkArrived && <ArrivedButton appointmentId={a.id} />}
           <AddFieldNoteDialog jobId={a.jobId} />
+          {canCollectPayment && <AddPaymentDialog jobId={a.jobId} triggerLabel="جمع دفعة" />}
           {canComplete && (
             <CompleteInstallationDialog
               appointmentId={a.id}

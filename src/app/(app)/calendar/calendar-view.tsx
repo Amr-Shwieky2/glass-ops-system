@@ -3,7 +3,13 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import FullCalendar from "@fullcalendar/react";
-import type { EventClickArg, EventSourceFuncArg, EventInput } from "@fullcalendar/core";
+import type {
+  EventClickArg,
+  EventSourceFuncArg,
+  EventInput,
+  EventContentArg,
+} from "@fullcalendar/core";
+import arLocale from "@fullcalendar/core/locales/ar";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import listPlugin from "@fullcalendar/list";
@@ -55,6 +61,23 @@ export function CalendarView({
     if (jobHref) router.push(jobHref);
   }
 
+  // Default FullCalendar rendering shows only the bare title (job number +
+  // customer + type) — assignee names and location are already fetched by
+  // /api/appointments but were previously discarded on the way to the DOM.
+  function renderEventContent(info: EventContentArg) {
+    const assigneeNames = info.event.extendedProps.assigneeNames as string[];
+    const location = info.event.extendedProps.location as string | null;
+    return (
+      <div className="overflow-hidden px-0.5 py-px text-xs leading-tight">
+        <div className="truncate font-medium">{info.event.title}</div>
+        {assigneeNames.length > 0 && (
+          <div className="truncate opacity-90">{assigneeNames.join("، ")}</div>
+        )}
+        {location && <div className="truncate opacity-75">{location}</div>}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {canViewAll && assignableUsers.length > 0 && (
@@ -91,6 +114,7 @@ export function CalendarView({
           initialView="dayGridMonth"
           direction="rtl"
           height="auto"
+          locales={[arLocale]}
           locale="ar"
           firstDay={0}
           headerToolbar={{
@@ -107,6 +131,7 @@ export function CalendarView({
           }}
           events={fetchEvents}
           eventClick={handleEventClick}
+          eventContent={renderEventContent}
         />
       </div>
     </div>

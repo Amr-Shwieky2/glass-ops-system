@@ -14,7 +14,7 @@ import {
 import { getQuoteForJob } from "@/server/quotes/queries";
 import { defaultQuoteValidUntil } from "@/server/quotes/versions";
 import { getProductionRequestForJob } from "@/server/production/queries";
-import { getJobAppointments } from "@/server/appointments/queries";
+import { getJobAppointments, isAssignedToJob } from "@/server/appointments/queries";
 import { getJobPayments } from "@/server/payments/queries";
 import { getJobCostsForJob, getJobProfitability } from "@/server/costs/queries";
 import { getJobRepairs } from "@/server/repairs/queries";
@@ -115,7 +115,14 @@ export default async function JobDetailPage({
     job.measuredByUserId === user!.id ||
     job.pricingResponsibleUserId === user!.id ||
     job.dealClosedByUserId === user!.id ||
-    job.assignments.some((a) => a.userId === user!.id);
+    job.assignments.some((a) => a.userId === user!.id) ||
+    // Sprint 8: a technician scheduled onto this job only via "جدولة
+    // موعد" (appointment_assignees), never separately run through "تعيين
+    // فني" (job_assignments), used to be Forbidden here even though My
+    // Day already links them straight to this exact page ("فتح المهمة") —
+    // the same appointment-assignment fallback addFieldNoteAction/
+    // addPaymentAction already apply.
+    (await isAssignedToJob(id, user!.id));
   if (!can(user, PERMISSIONS.VIEW_ALL_JOBS) && !isInvolved) {
     return <Forbidden message="هذه المهمة غير مسندة إليك." />;
   }
@@ -211,6 +218,18 @@ export default async function JobDetailPage({
   // never reach a viewer, e.g. an assigned installer, who holds none of
   // the pricing/financial permissions. See PERMISSIONS.VIEW_SALE_PRICE.
   const canViewSalePrice = can(user, PERMISSIONS.VIEW_SALE_PRICE);
+  // Sprint 8 — job.notes previously rendered to any viewer who could open
+  // the page at all, installers included, with no permission check
+  // whatsoever. General job notes routinely carry internal/commercial
+  // context (pricing history, customer-relationship notes) that an
+  // installer has no operational need for — gated the same way every
+  // other management-only figure on this page already is, behind any
+  // financial-visibility permission, rather than inventing a new one.
+  const canViewJobNotes = canAny(user, [
+    PERMISSIONS.VIEW_SALE_PRICE,
+    PERMISSIONS.VIEW_JOB_COSTS,
+    PERMISSIONS.VIEW_PROFITABILITY,
+  ]);
   // Sprint 6 (R1.18/S6.2/S6.3): automatic payment status, computed here
   // (not stored) from the exact same salePriceTotal/totalApproved figures
   // already fetched for the header/PaymentsSection above — never a second
@@ -317,7 +336,7 @@ export default async function JobDetailPage({
                 </div>
               </div>
             )}
-            {job.notes && (
+            {job.notes && canViewJobNotes && (
               <div className="sm:col-span-2">
                 <p className="text-muted-foreground">ملاحظات</p>
                 <p className="text-foreground">{job.notes}</p>

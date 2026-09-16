@@ -81,6 +81,8 @@ export async function GET(request: Request) {
           type: a.type,
           status: a.status,
           assigneeNames: a.assigneeNames,
+          location: a.location,
+          customerPhone: a.customerPhone,
           jobHref: `/jobs/${a.jobId}`,
         },
       };

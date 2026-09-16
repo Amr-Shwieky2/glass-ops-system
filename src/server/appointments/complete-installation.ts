@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { appointments, jobItems, jobs } from "@/server/db/schema";
 import { getCurrentUser } from "@/server/auth/session";
@@ -95,9 +95,25 @@ export async function completeInstallationAction(params: {
   // job status, audit) so nothing is double-recorded.
   let alreadyCompleted = false;
   await db.transaction(async (tx) => {
+    // Sprint 8: the completion note used to be silently discarded unless
+    // a payment was ALSO collected in the same submission (it was only
+    // ever written into recordCustomerPayment's own `notes` field). It is
+    // now always appended to the appointment's own notes — independent of
+    // whether a payment happened — and photoTaken is now a real column,
+    // not audit-log-only.
+    const completionNoteEntry = params.note?.trim()
+      ? `[إكمال التركيب] ${params.note.trim()}`
+      : undefined;
     const [updated] = await tx
       .update(appointments)
-      .set({ status: "completed", updatedAt: new Date() })
+      .set({
+        status: "completed",
+        photoTaken: params.photoTaken,
+        ...(completionNoteEntry
+          ? { notes: sql`concat_ws(E'\n\n', ${appointments.notes}, ${completionNoteEntry}::text)` }
+          : {}),
+        updatedAt: new Date(),
+      })
       .where(
         and(
           eq(appointments.id, params.appointmentId),
@@ -150,6 +166,7 @@ export async function completeInstallationAction(params: {
           photoTaken: params.photoTaken,
           paymentCollected: params.paymentCollected,
           paymentAmount,
+          note: params.note,
         },
       },
       tx,
